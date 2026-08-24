@@ -1,0 +1,17 @@
+{
+  "name": "gopanel-build",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "26.x"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i ./web/static/input.css -o ./web/static/output.css",
+    "test": "node --test --test-reporter=tap web/static/application.test.js"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
+}

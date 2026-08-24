@@ -1,0 +1,139 @@
+name: build
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/*.go"
+      - "**/*.templ"
+      - "internal/store/migrations/**"
+      - "go.mod"
+      - "go.sum"
+      - "package.json"
+      - "package-lock.json"
+      - "web/static/**"
+      - ".github/workflows/build.yaml"
+  pull_request:
+    paths:
+      - "**/*.go"
+      - "**/*.templ"
+      - "internal/store/migrations/**"
+      - "go.mod"
+      - "go.sum"
+      - "package.json"
+      - "package-lock.json"
+      - "web/static/**"
+      - ".github/workflows/build.yaml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GO_VERSION: "1.27.0"
+  NODE_VERSION: "26"
+  TEMPL_VERSION: "v0.3.1020"
+  TAILWIND_VERSION: "4.3.3"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Source Identity
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          printf 'GITHUB_SHA=%s\nCHECKED_OUT_SHA=%s\n' "$GITHUB_SHA" "$checked_out_sha"
+          test "$checked_out_sha" = "$GITHUB_SHA"
+          git status --short --branch
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Templ
+        run: |
+          set -euo pipefail
+          go install "github.com/a-h/templ/cmd/templ@${TEMPL_VERSION}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Tailwind CSS
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Verify Toolchain
+        run: |
+          set -euo pipefail
+          go version
+          node --version
+          npm --version
+          templ version
+          npm ls "tailwindcss@${TAILWIND_VERSION}" "@tailwindcss/cli@${TAILWIND_VERSION}"
+
+      - name: Test Browser Error Handling
+        run: |
+          set -euo pipefail
+          npm test | tee /tmp/gopanel-node-test.tap
+          if grep -Eq '# SKIP|# TODO' /tmp/gopanel-node-test.tap; then
+            grep -En '# SKIP|# TODO' /tmp/gopanel-node-test.tap
+            exit 1
+          fi
+
+      - name: Generate Templ files
+        run: |
+          set -euo pipefail
+          templ generate
+
+      - name: Verify generated Templ files
+        run: git diff --exit-code -- '*.go'
+
+      - name: Build Tailwind CSS
+        run: |
+          set -euo pipefail
+          npm run build:css
+
+      - name: Verify generated Tailwind CSS
+        run: git diff --exit-code -- web/static/output.css
+
+      - name: Test Go
+        run: |
+          set -euo pipefail
+          go clean -testcache
+          go test -count=1 -json ./... | tee /tmp/gopanel-go-test.json
+          if ! jq -s -e '[.[] | select(.Action == "skip" and (.Test // "") != "")] | length == 0' /tmp/gopanel-go-test.json; then
+            jq -s '[.[] | select(.Action == "skip" and (.Test // "") != "")]' /tmp/gopanel-go-test.json
+            exit 1
+          fi
+
+      - name: Test Go Race
+        run: go test -race -count=1 ./...
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Go Build
+        run: go build ./...
+
+      - name: Verify HTMX Checksum
+        working-directory: web/static
+        run: shasum -a 256 -c htmx-1.9.12.min.js.sha256
+
+      - name: Verify Clean Worktree
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"

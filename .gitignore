@@ -1,0 +1,38 @@
+# macOS metadata
+.DS_Store
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and coverage artifacts
+*.test
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories
+# vendor/
+node_modules/
+
+# Local build output
+/gopanel
+/gopanel.db*
+
+# Local working-tree archive
+/old_files.zip
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Local environment files
+.env
+
+# Editor and IDE settings
+# .idea/
+# .vscode/

@@ -1,0 +1,151 @@
+package diagnosticpages
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/irgordon/gopanel/internal/view"
+)
+
+templ ErrorListPage(records []DisplayRecord) {
+	@view.Layout("Error Log — GoPanel") {
+		<main class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+			<header class="flex items-center justify-between gap-4">
+				<a href="/" class="text-lg font-black tracking-tight text-white">GoPanel</a>
+				@view.Badge("Administrator")
+			</header>
+			<div class="mt-8 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-amber-50" role="status">
+				<p class="text-sm font-semibold">Process-local diagnostics — newest first</p>
+				<p class="mt-1 text-sm leading-6 text-amber-100/80">Only the most recent 200 entries are retained; older entries are evicted (oldest removed first). All entries disappear when the GoPanel process restarts. For history across restarts, check the structured backend log.</p>
+			</div>
+			<section class="mt-6" aria-labelledby="error-log-title" data-request-region="true">
+				<h1 id="error-log-title" class="text-2xl font-bold text-white">Error Log</h1>
+				@ErrorListFragment(records)
+			</section>
+		</main>
+	}
+}
+
+templ ErrorListFragment(records []DisplayRecord) {
+	<div data-request-region="true">
+		if len(records) == 0 {
+			<div class="mt-6 rounded-3xl border border-white/10 bg-white/[0.045] p-6 text-center">
+				<p class="text-sm font-semibold text-slate-300">No errors recorded</p>
+				<p class="mt-1 text-sm text-slate-500">GoPanel has not recorded any diagnostic entries in this process.</p>
+			</div>
+		} else {
+			<ul class="mt-6 space-y-3">
+				for _, record := range records {
+					<li>
+						<a href={ templ.URL("/errors/" + record.ID) } hx-get={ "/errors/" + record.ID } hx-target="closest section" hx-push-url="true" class="block rounded-2xl border border-white/10 bg-white/[0.045] p-4 hover:bg-white/[0.08] transition">
+							<div class="flex items-center justify-between gap-3">
+								<p class="text-sm font-semibold text-white">{ record.Event }</p>
+								<span class="text-xs text-slate-400">{ formatTime(record.CreatedAt) }</span>
+							</div>
+							<p class="mt-1 text-sm text-slate-400">{ record.PublicMessage }</p>
+							<p class="mt-2 font-mono text-xs text-cyan-300">Error reference: { record.ID }</p>
+							<p class="text-xs text-slate-500">Component: { record.Component } · User: { displayUser(record.UserID) }</p>
+						</a>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}
+
+templ ErrorDetailPage(record DisplayRecord) {
+	@view.Layout("Error " + record.ID + " — GoPanel") {
+		<main class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+			<a href="/errors" hx-get="/errors" hx-target="closest main" hx-push-url="true" class="inline-flex items-center text-sm font-semibold text-cyan-300 hover:text-cyan-200">← Back to Error Log</a>
+			<div class="mt-4" data-request-region="true">
+				@ErrorDetailFragment(record)
+			</div>
+		</main>
+	}
+}
+
+templ ErrorDetailFragment(record DisplayRecord) {
+	<article class="rounded-3xl border border-white/10 bg-white/[0.045] p-6" data-request-region="true">
+		<p class="text-xs font-semibold tracking-wide text-cyan-300 uppercase">Error reference</p>
+		<p class="mt-1 font-mono text-sm font-bold text-white">{ record.ID }</p>
+		<dl class="mt-6 space-y-4 text-sm">
+			<div>
+				<dt class="font-semibold text-slate-400">Timestamp</dt>
+				<dd class="mt-1 text-slate-100">{ formatTime(record.CreatedAt) }</dd>
+			</div>
+			<div>
+				<dt class="font-semibold text-slate-400">User</dt>
+				<dd class="mt-1 text-slate-100">{ displayUser(record.UserID) }</dd>
+			</div>
+			<div>
+				<dt class="font-semibold text-slate-400">Action / Route</dt>
+				<dd class="mt-1 text-slate-100">{ displayValue(record.Action, record.Event) }</dd>
+			</div>
+			if record.Target != "" {
+				<div>
+					<dt class="font-semibold text-slate-400">Target</dt>
+					<dd class="mt-1 text-slate-100">{ record.Target }</dd>
+				</div>
+			}
+			<div>
+				<dt class="font-semibold text-slate-400">Component</dt>
+				<dd class="mt-1 text-slate-100">{ record.Component }</dd>
+			</div>
+			if record.HTTPStatus != 0 {
+				<div>
+					<dt class="font-semibold text-slate-400">HTTP status</dt>
+					<dd class="mt-1 text-slate-100">{ fmt.Sprintf("%d", record.HTTPStatus) }</dd>
+				</div>
+			}
+			if record.AuditCorrelationID != "" {
+				<div>
+					<dt class="font-semibold text-slate-400">Audit / Correlation ID</dt>
+					<dd class="mt-1 font-mono text-xs text-slate-100">{ record.AuditCorrelationID }</dd>
+				</div>
+			}
+			<div>
+				<dt class="font-semibold text-slate-400">Public message</dt>
+				<dd class="mt-1 text-slate-100">{ record.PublicMessage }</dd>
+			</div>
+			<div>
+				<dt class="font-semibold text-slate-400">Safe technical detail</dt>
+				<dd class="mt-1 rounded-xl bg-slate-950/70 p-4 font-mono text-xs leading-6 text-slate-300 whitespace-pre-wrap break-words">{ record.TechnicalDetail }</dd>
+			</div>
+		</dl>
+		<p class="mt-6 text-xs text-slate-500">This record is process-local, not durably stored. It may be evicted after 200 entries or lost when the process restarts. Ordering and availability are not stable. See structured log for error_ref { record.ID }.</p>
+	</article>
+}
+
+templ ErrorNotFoundPage(id string) {
+	@view.Layout("Not found — GoPanel") {
+		<main class="mx-auto w-full max-w-xl px-4 py-10 sm:px-6">
+			@ErrorNotFoundFragment(id)
+		</main>
+	}
+}
+
+templ ErrorNotFoundFragment(id string) {
+	<div class="rounded-3xl border border-rose-300/25 bg-rose-300/10 p-6 text-rose-50" role="alert" data-request-region="true">
+		<p class="text-sm font-semibold">Error not found</p>
+		<p class="mt-2 text-sm leading-6 text-rose-100/80">No diagnostic record matches that reference in this process. It may have been evicted or the process restarted.</p>
+		<a href="/errors" hx-get="/errors" hx-target="closest div" hx-push-url="true" class="mt-4 inline-flex min-h-11 items-center rounded-xl border border-rose-200/25 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10">Back to Error Log</a>
+	</div>
+}
+
+func formatTime(t time.Time) string {
+	return t.Format("2006-01-02 15:04:05 UTC")
+}
+
+func displayUser(userID string) string {
+	if userID == "" {
+		return "system"
+	}
+	return userID
+}
+
+func displayValue(primary string, fallback string) string {
+	if primary != "" {
+		return primary
+	}
+	return fallback
+}
