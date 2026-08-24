@@ -8,7 +8,7 @@ Managed systems remain authoritative for their own state. GoPanel owns authentic
 
 GoPanel is in a pre-Phase-4 state. Phases 0, 1, 2, 2A, and 3 provide the application scaffold, lifecycle and SQLite foundation, local authentication, the administrator-only Error Log, and audited server registration. Docker connectivity and container views begin in Phase 4 and are not implemented yet.
 
-The current repair is locally validated and awaiting exact-commit CI. Literal JavaScript-disabled browser verification remains `NOT RUN` under the narrowly scoped [owner sequencing override](./docs/ADR/0002-pre-phase4-javascript-disabled-browser-override.md); the requirement remains part of later release verification.
+The pre-Phase-4 repair is closed by the narrowly scoped [owner sequencing override](./docs/ADR/0002-pre-phase4-javascript-disabled-browser-override.md), and Phase 4 is authorized to begin. Literal JavaScript-disabled browser verification remains `NOT RUN`; the override permits sequencing but does not satisfy or remove that requirement from later release verification.
 
 Run it locally:
 

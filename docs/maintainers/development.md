@@ -137,6 +137,8 @@ Current critical controls include migration failure, configuration rejection, SQ
 
 The JavaScript-independent real-HTML HTTP workflow is separate supporting evidence and remains `PASS`; it is not a browser test. The override permits sequencing only after every other required check and exact-commit CI passes. It does not weaken GP-023 or GP-031, satisfy the unresolved browser criterion, or create a standing exemption for later browser verification.
 
+Those remaining checks and exact-commit CI passed, so the pre-Phase-4 repair is closed by owner sequencing override and Phase 4 is authorized to begin. The deferred literal browser result remains `NOT RUN` and remains mandatory later when a suitable environment is available.
+
 ## Current Phase Boundary
 
 - SQLite contains migration metadata plus `users`, `sessions`, `servers`, and `audit_log`.

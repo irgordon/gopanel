@@ -68,7 +68,7 @@ The owner override closes this phase for sequencing despite the retained browser
 
 ## Phase 1 — Lifecycle + Migration Machinery (M)
 
-**Status:** `LOCAL PASS — AWAITING EXACT-COMMIT CI`
+**Status:** `EXACT-COMMIT CI PASS`
 
 **Objectives**
 - Establish the process lifecycle and the migration/storage *mechanism* everything else depends on — not the complete v1 schema. No table is created here that no capability yet owns.
@@ -104,7 +104,7 @@ The owner override closes this phase for sequencing despite the retained browser
 
 ## Phase 2 — Local Authentication (M)
 
-**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — AWAITING EXACT-COMMIT CI`
+**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — EXACT-COMMIT CI PASS`
 
 **Objectives**
 - Ship the only identity model v1 needs: local email/password with opaque sessions, plus a decision on how the first admin comes to exist.
@@ -145,7 +145,7 @@ The owner override closes this phase for sequencing despite the retained browser
 
 ## Phase 2A — Operator Feedback & Error Panel (S)
 
-**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — AWAITING EXACT-COMMIT CI`
+**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — EXACT-COMMIT CI PASS`
 
 *Depends on Phase 2 because diagnostic detail is administrator-only.*
 
@@ -176,7 +176,7 @@ The owner override closes this phase for sequencing despite the retained browser
 
 ## Phase 3 — Server Registration (M)
 
-**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — AWAITING EXACT-COMMIT CI`
+**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — EXACT-COMMIT CI PASS`
 
 **Objectives**
 - Let an operator register server identity and connection type without requiring integration modules that do not exist yet and without coupling registration to external system availability.
@@ -203,11 +203,13 @@ The owner override closes this phase for sequencing despite the retained browser
 
 ## Pre-Phase-4 Repair Evidence
 
-**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE OVERRIDE — AWAITING EXACT-COMMIT CI`
+**Status:** `PRE-PHASE-4 REPAIR: CLOSED BY OWNER SEQUENCING OVERRIDE`
 
-The [owner browser-evidence override](./ADR/0002-pre-phase4-javascript-disabled-browser-override.md) permits sequencing only after every other pre-Phase-4 requirement and exact-commit CI passes. Literal JavaScript-disabled browser verification remains `NOT RUN`; the override does not satisfy that exit criterion or weaken GP-023 or GP-031.
+**Sequencing:** `PHASE 4: AUTHORIZED TO BEGIN`
 
-Phase 4 is not authorized while exact-commit CI remains pending.
+The [owner browser-evidence override](./ADR/0002-pre-phase4-javascript-disabled-browser-override.md) applies after every other pre-Phase-4 requirement and exact-commit CI passed. Literal JavaScript-disabled browser verification remains `NOT RUN`; the override does not satisfy that exit criterion or weaken GP-023 or GP-031.
+
+Deferred evidence: literal JavaScript-disabled browser verification must be executed when a suitable browser environment becomes available and remains part of release verification. This closure permits sequencing; it does not mean the JavaScript-disabled exit criterion was satisfied.
 
 ---
 

@@ -16,6 +16,7 @@
 - Added lifecycle-owned expired-session cleanup and a strict, hidden-password `create-admin` command.
 - Restored the npm lockfile, regenerated Tailwind output, enforced Go formatting in CI, and updated pre-Phase-4 user and maintainer documentation.
 - Recorded the narrowly scoped pre-Phase-4 owner sequencing override without reclassifying the unresolved JavaScript-disabled browser check or weakening GP-023, GP-031, and later release verification.
+- Closed the pre-Phase-4 repair for sequencing after protected exact-commit CI passed; Phase 4 is authorized to begin while literal JavaScript-disabled browser verification remains deferred as `NOT RUN`.
 
 ### Security
 
