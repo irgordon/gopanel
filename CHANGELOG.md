@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Enforced bounded, origin-checked, body-only CSRF validation before browser mutations. Query parameters can no longer supply form tokens.
+- Distinguished missing sessions and authorization denials from authentication-store failures. Logout and password-change failures now return one safe diagnostic reference without raw database detail or false redirects.
+- Split global and per-account login limiting so malformed email attempts consume global capacity without filling the account map.
+- Added truthful server-registration audit outcomes. Registration audits the real server ID, finalizes known failures, and renders a persistent do-not-retry partial-completion state when creation succeeds but audit finalization fails.
+- Corrected HTMX URL state after sign-in and server creation with explicit redirect/push headers while preserving ordinary `303` form behavior without JavaScript.
+- Removed credential-reference input and rendering until an owning integration exists. Server validation now returns normalized typed input that persistence stores unchanged.
+- Added a forward migration that clears pre-Phase-4 credential references because no owning integration could have validated them, and prevents user deletion from cascading into audit-history deletion.
+- Added structured JSON redaction, correct Error Log `404` behavior, and correlated rendering failures.
+- Moved Phase 2/2A/3 dependency construction into `cmd/gopanel`; `internal/app` now owns lifecycle and route mounting only.
+- Added lifecycle-owned expired-session cleanup and a strict, hidden-password `create-admin` command.
+- Restored the npm lockfile, regenerated Tailwind output, enforced Go formatting in CI, and updated pre-Phase-4 user and maintainer documentation.
+- Recorded the narrowly scoped pre-Phase-4 owner sequencing override without reclassifying the unresolved JavaScript-disabled browser check or weakening GP-023, GP-031, and later release verification.
+
+### Security
+
+- Production session cookies now use `__Host-gopanel_session`; development uses a separate loopback-only cookie name. Legacy session cookies are cleared during login, logout, and password changes.
+- Added behavioral regression coverage for CSRF source, hostile origins, limiter consumption, raw-error disclosure, logout persistence failure, diagnostic redaction, audit partial completion, and session-cleanup ownership.
+
 ## v0.1.0 - 2026-08-24
 
 ### Added
@@ -47,4 +69,3 @@
 ### Security
 
 - Same-origin vendored browser assets with recorded checksums, server-rendered error responses without raw backend details, external CSP-compatible JavaScript with no inline script.
-

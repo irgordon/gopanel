@@ -102,6 +102,9 @@ func (r *Recorder) logRecord(record Record) {
 		"component", record.Component,
 		"detail", record.TechnicalDetail,
 		"user_id", record.UserID,
+		"action", record.Action,
+		"target", record.Target,
+		"audit_id", record.AuditCorrelationID,
 		"http_status", record.HTTPStatus,
 	)
 }

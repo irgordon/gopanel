@@ -14,16 +14,17 @@ func TestRecordResultRejectsSecondTransition(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	userID := createTestUser(t, db)
+	auditStore := NewStore(db.SQLDatabase())
 
-	rec, err := RecordAttempt(ctx, db.SQLDatabase(), userID, "create_server", "server", "pending")
+	rec, err := auditStore.RecordAttempt(ctx, userID, "create_server", "server", "server-1")
 	if err != nil {
 		t.Fatalf("RecordAttempt: %v", err)
 	}
-	if err := RecordResult(ctx, db.SQLDatabase(), rec.ID, ResultSuccess); err != nil {
+	if err := auditStore.RecordResult(ctx, rec.ID, ResultSuccess); err != nil {
 		t.Fatalf("first RecordResult: %v", err)
 	}
 	// Second transition must fail (row no longer attempted) — GP-014
-	err = RecordResult(ctx, db.SQLDatabase(), rec.ID, ResultFailed)
+	err = auditStore.RecordResult(ctx, rec.ID, ResultFailed)
 	if err == nil {
 		t.Fatal("expected second RecordResult to fail when row already success")
 	}
@@ -43,9 +44,10 @@ func TestRecordResultAllowsOnlyAttemptedToSuccessOrFailed(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	userID := createTestUser(t, db)
-	rec, _ := RecordAttempt(ctx, db.SQLDatabase(), userID, "create_server", "server", "pending")
+	auditStore := NewStore(db.SQLDatabase())
+	rec, _ := auditStore.RecordAttempt(ctx, userID, "create_server", "server", "server-1")
 	// Invalid result must be rejected
-	if err := RecordResult(ctx, db.SQLDatabase(), rec.ID, "invalid"); err == nil {
+	if err := auditStore.RecordResult(ctx, rec.ID, "invalid"); err == nil {
 		t.Fatal("expected invalid result to fail")
 	}
 }

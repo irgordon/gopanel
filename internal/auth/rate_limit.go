@@ -29,7 +29,7 @@ func NewLoginLimiter(clock func() time.Time) *LoginLimiter {
 	now := clock()
 	return &LoginLimiter{clock: clock, accounts: map[string]accountLimit{}, tokens: globalBurst, last: now}
 }
-func (limiter *LoginLimiter) Allow(email string) bool {
+func (limiter *LoginLimiter) AllowGlobal() bool {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 	now := limiter.clock()
@@ -38,8 +38,17 @@ func (limiter *LoginLimiter) Allow(email string) bool {
 		return false
 	}
 	limiter.tokens--
-	limiter.evict(now)
-	entry := limiter.accounts[email]
+	return true
+}
+func (limiter *LoginLimiter) AllowAccount(email string) bool {
+	limiter.mutex.Lock()
+	defer limiter.mutex.Unlock()
+	now := limiter.clock()
+	limiter.evictExpired(now)
+	entry, exists := limiter.accounts[email]
+	if !exists && len(limiter.accounts) >= maxAccountEntries {
+		return false
+	}
 	if entry.reset.Before(now) {
 		entry = accountLimit{reset: now.Add(accountWindow)}
 	}
@@ -62,19 +71,10 @@ func (limiter *LoginLimiter) refill(now time.Time) {
 	}
 	limiter.last = now
 }
-func (limiter *LoginLimiter) evict(now time.Time) {
+func (limiter *LoginLimiter) evictExpired(now time.Time) {
 	for key, value := range limiter.accounts {
 		if value.reset.Before(now) {
 			delete(limiter.accounts, key)
-		}
-	}
-	if len(limiter.accounts) < maxAccountEntries {
-		return
-	}
-	for key := range limiter.accounts {
-		delete(limiter.accounts, key)
-		if len(limiter.accounts) < maxAccountEntries {
-			return
 		}
 	}
 }

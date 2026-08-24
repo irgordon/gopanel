@@ -13,8 +13,13 @@ type Server struct {
 }
 
 type Input struct {
-	Name                string
-	Address             string
-	ConnectionType      string
-	CredentialReference string
+	Name           string
+	Address        string
+	ConnectionType string
+}
+
+type ValidatedInput struct {
+	Name           string
+	Address        string
+	ConnectionType string
 }

@@ -2,8 +2,8 @@ package audit
 
 import (
 	"context"
-	"database/sql"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -26,26 +26,36 @@ type Record struct {
 	UpdatedAt  time.Time
 }
 
-func RecordAttempt(ctx context.Context, db *sql.DB, userID, action, targetType, targetID string) (Record, error) {
+type Store struct {
+	database *sql.DB
+	clock    func() time.Time
+}
+
+func NewStore(database *sql.DB) *Store {
+	return &Store{database: database, clock: time.Now}
+}
+
+func (store *Store) RecordAttempt(ctx context.Context, userID, action, targetType, targetID string) (Record, error) {
 	id, err := randomID()
 	if err != nil {
 		return Record{}, err
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err = db.ExecContext(ctx, `INSERT INTO audit_log(id, user_id, action, target_type, target_id, result, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)`,
-		id, userID, action, targetType, targetID, ResultAttempted, now, now)
+	now := store.clock().UTC()
+	timestamp := now.Format(time.RFC3339Nano)
+	_, err = store.database.ExecContext(ctx, `INSERT INTO audit_log(id, user_id, action, target_type, target_id, result, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)`,
+		id, userID, action, targetType, targetID, ResultAttempted, timestamp, timestamp)
 	if err != nil {
 		return Record{}, fmt.Errorf("insert audit attempted: %w", err)
 	}
-	return Record{ID: id, UserID: userID, Action: action, TargetType: targetType, TargetID: targetID, Result: ResultAttempted}, nil
+	return Record{ID: id, UserID: userID, Action: action, TargetType: targetType, TargetID: targetID, Result: ResultAttempted, CreatedAt: now, UpdatedAt: now}, nil
 }
 
-func RecordResult(ctx context.Context, db *sql.DB, auditID, result string) error {
+func (store *Store) RecordResult(ctx context.Context, auditID, result string) error {
 	if result != ResultSuccess && result != ResultFailed {
 		return fmt.Errorf("audit result must be success or failed")
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := db.ExecContext(ctx, `UPDATE audit_log SET result=?, updated_at=? WHERE id=? AND result=?`,
+	now := store.clock().UTC().Format(time.RFC3339Nano)
+	res, err := store.database.ExecContext(ctx, `UPDATE audit_log SET result=?, updated_at=? WHERE id=? AND result=?`,
 		result, now, auditID, ResultAttempted)
 	if err != nil {
 		return fmt.Errorf("update audit result: %w", err)

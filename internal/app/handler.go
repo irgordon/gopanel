@@ -10,6 +10,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/irgordon/gopanel/internal/auth"
 	"github.com/irgordon/gopanel/internal/diagnostic"
 	"github.com/irgordon/gopanel/internal/view"
 )
@@ -17,7 +18,14 @@ import (
 const readinessTimeout = time.Second
 
 func (application *Application) handleHome(w http.ResponseWriter, r *http.Request) {
-	application.respondHTML(w, r, http.StatusOK, view.HomePage())
+	user, _ := auth.UserFromContext(r.Context())
+	token, err := application.authHandler.AuthenticatedFormToken(r)
+	if err != nil {
+		record := application.recordHTTPFailure("home_form_token_failed", err)
+		application.writeSafeRenderError(w, r, record.ID)
+		return
+	}
+	application.respondHTML(w, r, http.StatusOK, view.HomePage(view.HomeModel{Name: user.Name, IsAdmin: user.Role == "admin", CSRFToken: token}))
 }
 
 func (application *Application) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -101,7 +109,11 @@ func (application *Application) writeSafeRenderError(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusInternalServerError)
 
 	safeReference := html.EscapeString(reference)
-	message := `The page could not be rendered. Try again. See Error Log. Error reference: <code>` + safeReference + `</code>.`
+	guidance := "Contact an administrator if the problem continues."
+	if user, ok := auth.UserFromContext(r.Context()); ok && user.Role == "admin" {
+		guidance = `<a href="/errors/` + safeReference + `">See Error Log</a>.`
+	}
+	message := `The page could not be rendered. Try again. Error reference: <code>` + safeReference + `</code>. ` + guidance
 	if isHTMXRequest(r) {
 		application.writeErrorResponse(w, `<div role="alert">`+message+`</div>`)
 		return

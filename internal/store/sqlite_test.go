@@ -96,7 +96,7 @@ func TestOpenRejectsUnreadableDatabase(t *testing.T) {
 	}
 }
 
-func TestEmbeddedMigrationsCreateNoCapabilityTables(t *testing.T) {
+func TestEmbeddedMigrationsCreatePrePhase4Tables(t *testing.T) {
 	database := openTestStore(t, filepath.Join(t.TempDir(), "gopanel.db"))
 	defer closeStore(t, database)
 
@@ -104,8 +104,55 @@ func TestEmbeddedMigrationsCreateNoCapabilityTables(t *testing.T) {
 		t.Fatalf("run embedded migrations: %v", err)
 	}
 
-	assertMigrationCount(t, database, 3)
+	assertMigrationCount(t, database, 4)
 	assertExpectedPhase3Tables(t, database)
+}
+
+func TestPrePhase4IntegrityMigrationClearsReferencesAndPreservesAudit(t *testing.T) {
+	database := openTestStore(t, filepath.Join(t.TempDir(), "gopanel.db"))
+	defer closeStore(t, database)
+	ctx := context.Background()
+
+	if err := database.migrate(ctx, firstThreeEmbeddedMigrations(t), migrationDirectory); err != nil {
+		t.Fatalf("apply first three migrations: %v", err)
+	}
+	_, err := database.database.ExecContext(ctx, `
+		INSERT INTO users(id,email,name,password_hash,role,created_at,updated_at)
+		VALUES('user-1','admin@example.com','Admin','hash','admin','now','now');
+		INSERT INTO servers(id,name,address,connection_type,credential_reference,created_at,updated_at)
+		VALUES('server-1','prod','10.0.0.1','docker','unowned-reference','now','now');
+		INSERT INTO audit_log(id,user_id,action,target_type,target_id,result,created_at,updated_at)
+		VALUES('audit-1','user-1','create_server','server','server-1','success','now','now');
+	`)
+	if err != nil {
+		t.Fatalf("seed Phase 3 data: %v", err)
+	}
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatalf("apply integrity migration: %v", err)
+	}
+	var credentialReference *string
+	if err := database.database.QueryRowContext(ctx, `SELECT credential_reference FROM servers WHERE id='server-1'`).Scan(&credentialReference); err != nil {
+		t.Fatalf("read credential reference: %v", err)
+	}
+	if credentialReference != nil {
+		t.Fatalf("expected unowned credential reference to be cleared, got %q", *credentialReference)
+	}
+	if _, err := database.database.ExecContext(ctx, `DELETE FROM users WHERE id='user-1'`); err == nil {
+		t.Fatal("expected audit history to prevent user deletion")
+	}
+}
+
+func firstThreeEmbeddedMigrations(t *testing.T) fs.FS {
+	t.Helper()
+	files := fstest.MapFS{}
+	for _, name := range []string{"0001_phase_1_baseline.sql", "0002_local_auth.sql", "0003_server_registration.sql"} {
+		contents, err := fs.ReadFile(embeddedMigrations, "migrations/"+name)
+		if err != nil {
+			t.Fatalf("read embedded migration %s: %v", name, err)
+		}
+		files["migrations/"+name] = &fstest.MapFile{Data: contents}
+	}
+	return files
 }
 
 func TestMigrateSupportsZeroApplicationMigrations(t *testing.T) {

@@ -29,7 +29,7 @@ func Layout(title string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" class=\"h-full bg-slate-950\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"description\" content=\"GoPanel Phase 0 application scaffold\"><meta name=\"htmx-config\" content='{\"allowEval\":false,\"allowScriptTags\":false,\"selfRequestsOnly\":true,\"includeIndicatorStyles\":false}'><title>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" class=\"h-full bg-slate-950\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"description\" content=\"GoPanel infrastructure control panel\"><meta name=\"htmx-config\" content='{\"allowEval\":false,\"allowScriptTags\":false,\"selfRequestsOnly\":true,\"includeIndicatorStyles\":false}'><title>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -42,7 +42,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/static/output.css\"><script src=\"/static/htmx-1.9.12.min.js\" defer></script><script src=\"/static/application.js\" defer></script></head><body class=\"min-h-full bg-slate-950 text-slate-100 antialiased selection:bg-cyan-300 selection:text-slate-950\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/static/output.css\"><script src=\"/static/htmx-1.9.12.min.js\" defer></script><script src=\"/static/application.js\" defer></script></head><body hx-indicator=\"#request-loading\" class=\"min-h-full bg-slate-950 text-slate-100 antialiased selection:bg-cyan-300 selection:text-slate-950\"><div id=\"request-loading\" class=\"htmx-indicator fixed top-4 right-4 z-50 rounded-xl border border-cyan-300/30 bg-slate-900 px-4 py-3 text-sm font-semibold text-cyan-200 shadow-xl\" role=\"status\">Loading GoPanel…</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

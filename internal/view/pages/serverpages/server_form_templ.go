@@ -88,7 +88,7 @@ func ServerFormFragment(csrfToken string, input DisplayInput, fieldErrors map[st
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div data-request-region=\"true\" class=\"rounded-3xl border border-white/10 bg-white/[0.045] p-6\"><h1 class=\"text-xl font-bold text-white\">Add server</h1><p class=\"mt-2 text-sm leading-6 text-slate-400\">Register server identity and connection type. Credential references are added later by integrations. No remote contact is made on save.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div data-request-region=\"true\" class=\"rounded-3xl border border-white/10 bg-white/[0.045] p-6\"><h1 class=\"text-xl font-bold text-white\">Add server</h1><p class=\"mt-2 text-sm leading-6 text-slate-400\">Register server identity and connection type. No remote contact is made on save. Integration credentials are configured only after the owning integration is available.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -190,10 +190,6 @@ func ServerFormFragment(csrfToken string, input DisplayInput, fieldErrors map[st
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</p></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = view.FormField("credential_reference", "Credential reference (optional)", "credential_reference", input.CredentialReference, "Opaque reference — not validated until owning integration exists. Example: prod-context", fieldErrors["credential_reference"]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -99,7 +99,7 @@ func LoginPage(csrfToken string, errorMessage string, emailValue string) templ.C
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = view.FormField("email", "Email", "email", emailValue, "Enter your account email.", "").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = LoginEmailField(emailValue).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -212,11 +212,11 @@ func LoginFragment(csrfToken string, errorMessage string, emailValue string) tem
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = view.FormField("email", "Email", "email", emailValue, "Enter your account email.", "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = LoginEmailField(emailValue).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required class=\"mt-3 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950/70 px-4 py-3 text-base text-white\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div><label for=\"password\" class=\"block text-sm font-semibold text-slate-100\">Password</label><p id=\"password-help\" class=\"mt-1 text-sm leading-6 text-slate-400\">Enter your password.</p><input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required aria-describedby=\"password-help\" class=\"mt-3 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950/70 px-4 py-3 text-base text-white\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -235,6 +235,48 @@ func LoginFragment(csrfToken string, errorMessage string, emailValue string) tem
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func LoginEmailField(emailValue string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div><label for=\"email\" class=\"block text-sm font-semibold text-slate-100\">Email</label><p id=\"email-help\" class=\"mt-1 text-sm leading-6 text-slate-400\">Enter your account email.</p><input id=\"email\" name=\"email\" type=\"email\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(emailValue)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/pages/auth/login.templ`, Line: 63, Col: 64}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" autocomplete=\"username\" required aria-describedby=\"email-help\" class=\"mt-3 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950/70 px-4 py-3 text-base text-white\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

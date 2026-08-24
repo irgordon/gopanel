@@ -1,8 +1,8 @@
 # Develop GoPanel
 
-Use this page to run and validate the current Phase 1 application foundation.
+Use this page to run and validate the current pre-Phase-4 application.
 
-GoPanel serves the Phase 0 page and embedded assets while Phase 1 owns validated configuration, file-backed SQLite startup, embedded migrations, health and readiness, process-local diagnostic recording, structured lifecycle logs, and graceful shutdown. Authentication, browser diagnostics, audit, feature tables, and infrastructure integrations have not shipped.
+Phases 0–3 provide validated startup, file-backed SQLite, local authentication, process-local browser diagnostics, audited server registration, health and readiness probes, structured lifecycle logs, expired-session cleanup, and graceful shutdown. Managed-system integrations have not shipped; Phase 4 begins Docker read-only support.
 
 ## Prerequisites
 
@@ -120,7 +120,7 @@ When a critical test is introduced or materially changed:
 4. Apply the exact inverse change and confirm the original file hash and complete diff digest.
 5. Rerun the unmodified test and record the successful result.
 
-Phase 1 specifically protects migration failure, configuration rejection, SQLite-backed readiness, graceful HTTP draining, diagnostic redaction, the 200-entry diagnostic bound, error-reference correlation, and concurrent recorder access. Negative-control mutations are temporary and must never be committed.
+Current critical controls include migration failure, configuration rejection, SQLite-backed readiness, graceful HTTP draining, authentication and CSRF boundaries, diagnostic redaction, the 200-entry diagnostic bound, error-reference correlation, server-registration audit transitions, and lifecycle-owned session cleanup. Negative-control mutations are temporary and must never be committed.
 
 ## Evidence States
 
@@ -131,11 +131,18 @@ Phase 1 specifically protects migration failure, configuration rejection, SQLite
 
 `LOCAL PASS` means required local checks and negative controls passed for the recorded baseline-plus-diff source. `CI PASS` requires the protected workflow to pass against the exact commit. A phase is complete only when all required local and exact-commit CI evidence exists.
 
-## Phase 1 Limits
+## Current Owner Sequencing Override
 
-- SQLite contains only migration-owned metadata; there are no application capability tables.
-- Diagnostic records are process-local, capped at 200, and have no browser routes or persistent database storage.
-- There are no users, sessions, roles, CSRF tokens, audit records, or infrastructure integrations.
+[ADR 0002](../ADR/0002-pre-phase4-javascript-disabled-browser-override.md) records a narrow owner override for the current pre-Phase-4 repair. Authenticated desktop and mobile browser checks passed, as did HTMX navigation and URL behavior. Literal JavaScript-disabled browser verification remains `NOT RUN` because the available in-app browser cannot disable JavaScript, the owner declined Codex Computer Use authorization, and no alternate literal browser environment was used.
+
+The JavaScript-independent real-HTML HTTP workflow is separate supporting evidence and remains `PASS`; it is not a browser test. The override permits sequencing only after every other required check and exact-commit CI passes. It does not weaken GP-023 or GP-031, satisfy the unresolved browser criterion, or create a standing exemption for later browser verification.
+
+## Current Phase Boundary
+
+- SQLite contains migration metadata plus `users`, `sessions`, `servers`, and `audit_log`.
+- Diagnostic records are process-local, capped at 200, and exposed only through administrator-authorized browser routes.
+- Local authentication, two roles, session-bound CSRF, and audited server registration are present.
+- Docker, Caddy, Vault, and Kubernetes clients and operations are not present.
 - Readiness depends on GoPanel and SQLite only.
 
 See [Architecture](../ARCHITECTURE.md) and [Invariants](../INVARIANTS.md) for the boundaries later phases must preserve.

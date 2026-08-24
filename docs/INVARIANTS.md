@@ -6,7 +6,7 @@ This document states what must remain true while GoPanel is built and changed.
 
 An invariant is not a roadmap commitment. The roadmap may change sequence or scope, but it may not quietly weaken these constraints.
 
-GoPanel currently contains the Phase 1 lifecycle, migration, configuration, readiness, and diagnostic-recording foundation. These invariants are requirements for applicable current and future code, not claims that deferred capabilities already exist.
+GoPanel currently contains the Phase 1 lifecycle and storage foundation, Phase 2 local authentication, Phase 2A operator diagnostics, and Phase 3 audited server registration. Phase 4 managed-system integration has not started. These invariants are requirements for applicable current and future code, not claims that deferred capabilities already exist.
 
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) remains the technical source of truth. This file is its testable constraint register. If the two disagree, implementation stops until both documents are reconciled. [`ROADMAP.md`](./ROADMAP.md) does not override either document.
 

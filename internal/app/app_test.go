@@ -19,19 +19,21 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/irgordon/gopanel/internal/audit"
 	"github.com/irgordon/gopanel/internal/auth"
 	"github.com/irgordon/gopanel/internal/config"
 	"github.com/irgordon/gopanel/internal/diagnostic"
+	"github.com/irgordon/gopanel/internal/server"
 	"github.com/irgordon/gopanel/internal/store"
 )
 
 func TestRootRouteRendersCompleteHTML(t *testing.T) {
 	application := newTestApplication(t)
-	recorder := serveRequest(application, http.MethodGet, "/", false)
+	recorder := serveAuthenticatedRequest(t, application, http.MethodGet, "/", false)
 
 	assertStatus(t, recorder, http.StatusOK)
 	assertContains(t, recorder.Body.String(), "<!doctype html>")
-	assertContains(t, recorder.Body.String(), "The GoPanel scaffold is running.")
+	assertContains(t, recorder.Body.String(), "Register and manage infrastructure safely.")
 	assertContains(t, recorder.Body.String(), "src=\"/static/htmx-1.9.12.min.js\"")
 	assertContains(t, recorder.Body.String(), "src=\"/static/application.js\"")
 	assertContains(t, recorder.Body.String(), "href=\"/static/output.css\"")
@@ -47,6 +49,14 @@ func TestRootRouteRendersCompleteHTML(t *testing.T) {
 	if strings.Count(recorder.Body.String(), "<script") != strings.Count(recorder.Body.String(), "<script src=") {
 		t.Fatal("expected every script element to load an external source")
 	}
+}
+
+func TestRootRouteRequiresLogin(t *testing.T) {
+	application := newTestApplication(t)
+	recorder := serveRequest(application, http.MethodGet, "/", false)
+
+	assertStatus(t, recorder, http.StatusUnauthorized)
+	assertContains(t, recorder.Body.String(), "Sign in is required")
 }
 
 func TestRootRouteSetsBrowserSecurityHeaders(t *testing.T) {
@@ -158,9 +168,9 @@ func TestNewRejectsInvalidConfigurationBeforeListening(t *testing.T) {
 	defer closeTestStore(t, database)
 	logger, diagnostics, _ := testObservability()
 	invalid := testConfig(databasePath, "not-an-address")
-	authHandler := newTestAuthHandler(t, database)
+	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
 
-	_, err := New(invalid, database, logger, diagnostics, authHandler)
+	_, err := New(invalid, database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
 	if err == nil || !strings.Contains(err.Error(), "validate application configuration") {
 		t.Fatalf("expected invalid configuration rejection, got %v", err)
 	}
@@ -176,8 +186,8 @@ func TestRunPropagatesListenFailureAndClosesDatabase(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "gopanel.db")
 	database := openMigratedStore(t, databasePath)
 	logger, diagnostics, _ := testObservability()
-	authHandler := newTestAuthHandler(t, database)
-	application, err := New(testConfig(databasePath, listener.Addr().String()), database, logger, diagnostics, authHandler)
+	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
+	application, err := New(testConfig(databasePath, listener.Addr().String()), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
 	if err != nil {
 		t.Fatalf("construct application: %v", err)
 	}
@@ -275,6 +285,43 @@ func TestRunBoundsShutdownDeadline(t *testing.T) {
 	<-requestResult
 }
 
+func TestSessionCleanupStopsWithLifecycleContext(t *testing.T) {
+	application, _, _, _ := newTestEnvironment(t)
+	cleaner := &testSessionCleaner{calls: make(chan struct{}, 1)}
+	application.sessionCleaner = cleaner
+	application.cleanupInterval = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go application.runSessionCleanup(ctx, done)
+	select {
+	case <-cleaner.calls:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for session cleanup")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("session cleanup did not stop with lifecycle context")
+	}
+}
+
+func TestSessionCleanupFailureCreatesSafeDiagnostic(t *testing.T) {
+	application, diagnostics, _, _ := newTestEnvironment(t)
+	application.sessionCleaner = &testSessionCleaner{err: errors.New("private database detail")}
+
+	application.cleanupExpiredSessions(context.Background())
+
+	records := diagnostics.Snapshot()
+	if len(records) != 1 {
+		t.Fatalf("expected one diagnostic, got %d", len(records))
+	}
+	if strings.Contains(records[0].TechnicalDetail, "private database detail") {
+		t.Fatalf("cleanup diagnostic exposed raw detail: %q", records[0].TechnicalDetail)
+	}
+}
+
 func newTestApplication(t *testing.T) *Application {
 	t.Helper()
 	application, _, _, _ := newTestEnvironment(t)
@@ -286,8 +333,8 @@ func newTestEnvironment(t *testing.T) (*Application, *diagnostic.Recorder, *stor
 	databasePath := filepath.Join(t.TempDir(), "gopanel.db")
 	database := openMigratedStore(t, databasePath)
 	logger, diagnostics, logs := testObservability()
-	authHandler := newTestAuthHandler(t, database)
-	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler)
+	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
+	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
 	if err != nil {
 		t.Fatalf("construct application: %v", err)
 	}
@@ -297,7 +344,7 @@ func newTestEnvironment(t *testing.T) (*Application, *diagnostic.Recorder, *stor
 	return application, diagnostics, database, logs
 }
 
-func newTestAuthHandler(t *testing.T, database *store.Store) *auth.Handler {
+func newTestHandlers(t *testing.T, database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder) (*auth.Handler, *diagnostic.Handler, *server.Handler, *auth.Service) {
 	t.Helper()
 	csrfKey, err := auth.NewCSRFKey()
 	if err != nil {
@@ -307,11 +354,16 @@ func newTestAuthHandler(t *testing.T, database *store.Store) *auth.Handler {
 	authStore := auth.NewStore(database.SQLDatabase())
 	limiter := auth.NewLoginLimiter(time.Now)
 	service := auth.NewService(authStore, limiter, time.Now)
-	handler, err := auth.NewHandler(authStore, service, csrf, time.Now, true, "http://127.0.0.1:8080")
+	handler, err := auth.NewHandler(service, csrf, time.Now, true, "http://127.0.0.1:8080", logger, diagnostic.AuthFailureRecorder(diagnostics))
 	if err != nil {
 		t.Fatalf("create auth handler: %v", err)
 	}
-	return handler
+	diagnosticHandler := diagnostic.NewHandler(diagnostics, logger)
+	serverStore := server.NewStore(database.SQLDatabase())
+	auditStore := audit.NewStore(database.SQLDatabase())
+	serverService := server.NewService(serverStore, auditStore)
+	serverHandler := server.NewHandler(serverService, diagnostics, logger, handler.AuthenticatedFormToken)
+	return handler, diagnosticHandler, serverHandler, service
 }
 
 func assertRenderFailureCorrelation(
@@ -325,7 +377,7 @@ func assertRenderFailureCorrelation(
 	assertStatus(t, recorder, http.StatusInternalServerError)
 	assertContains(t, recorder.Header().Get("Content-Type"), "text/html")
 	assertContains(t, recorder.Body.String(), "The page could not be rendered. Try again.")
-	assertContains(t, recorder.Body.String(), "See Error Log")
+	assertContains(t, recorder.Body.String(), "Contact an administrator")
 
 	records := diagnostics.Snapshot()
 	if len(records) != 1 {
@@ -346,8 +398,8 @@ func newLifecycleEnvironment(t *testing.T) (*Application, *bytes.Buffer, *store.
 	databasePath := filepath.Join(t.TempDir(), "gopanel.db")
 	database := openMigratedStore(t, databasePath)
 	logger, diagnostics, logs := testObservability()
-	authHandler := newTestAuthHandler(t, database)
-	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler)
+	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
+	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
 	if err != nil {
 		t.Fatalf("construct lifecycle application: %v", err)
 	}
@@ -511,6 +563,27 @@ func serveRequest(application *Application, method string, target string, htmx b
 	return recorder
 }
 
+func serveAuthenticatedRequest(t *testing.T, application *Application, method, target string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	authStore := auth.NewStore(application.store.SQLDatabase())
+	user, err := authStore.CreateUser(context.Background(), "operator@example.com", "Operator", "test-hash", "admin")
+	if err != nil {
+		t.Fatalf("create authenticated user: %v", err)
+	}
+	session, _, err := authStore.CreateSession(context.Background(), user.ID, time.Now())
+	if err != nil {
+		t.Fatalf("create authenticated session: %v", err)
+	}
+	request := httptest.NewRequest(method, target, nil)
+	request.AddCookie(&http.Cookie{Name: "gopanel_session_dev", Value: session})
+	if htmx {
+		request.Header.Set("HX-Request", "true")
+	}
+	recorder := httptest.NewRecorder()
+	application.Handler().ServeHTTP(recorder, request)
+	return recorder
+}
+
 func assertStatus(t *testing.T, recorder *httptest.ResponseRecorder, expected int) {
 	t.Helper()
 	if recorder.Code != expected {
@@ -530,4 +603,19 @@ func assertLifecycleEvents(t *testing.T, logs string, events ...string) {
 	for _, event := range events {
 		assertContains(t, logs, "event="+event)
 	}
+}
+
+type testSessionCleaner struct {
+	calls chan struct{}
+	err   error
+}
+
+func (cleaner *testSessionCleaner) CleanupExpired(context.Context) (int64, error) {
+	if cleaner.calls != nil {
+		select {
+		case cleaner.calls <- struct{}{}:
+		default:
+		}
+	}
+	return 0, cleaner.err
 }

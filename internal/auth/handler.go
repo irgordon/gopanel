@@ -1,154 +1,212 @@
 package auth
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/irgordon/gopanel/internal/view/pages/auth"
 )
 
 const (
-	maxFormBytes    = 16 << 10
-	sessionCookie   = "gopanel_session"
-	loginCookieProd = "__Host-gopanel_login"
-	loginCookieDev  = "gopanel_login_dev"
+	maxFormBytes        = 16 << 10
+	sessionCookieProd   = "__Host-gopanel_session"
+	sessionCookieDev    = "gopanel_session_dev"
+	legacySessionCookie = "gopanel_session"
+	loginCookieProd     = "__Host-gopanel_login"
+	loginCookieDev      = "gopanel_login_dev"
 )
 
 type Handler struct {
-	store       *Store
-	service     *Service
-	csrf        *CSRF
-	clock       func() time.Time
-	development bool
-	origin      *http.CrossOriginProtection
+	service       *Service
+	csrf          *CSRF
+	clock         func() time.Time
+	development   bool
+	origin        *http.CrossOriginProtection
+	logger        *slog.Logger
+	recordFailure FailureRecorder
 }
 
-func NewHandler(store *Store, service *Service, csrf *CSRF, clock func() time.Time, development bool, publicURL string) (*Handler, error) {
+type loginResponse struct {
+	contextCookie string
+	email         string
+	session       string
+	expires       time.Time
+	err           error
+}
+
+type passwordResponse struct {
+	user    User
+	session string
+	err     error
+}
+
+func NewHandler(service *Service, csrf *CSRF, clock func() time.Time, development bool, publicURL string, logger *slog.Logger, recordFailure FailureRecorder) (*Handler, error) {
+	if service == nil {
+		return nil, errors.New("auth service is required")
+	}
+	if csrf == nil {
+		return nil, errors.New("CSRF protection is required")
+	}
+	if clock == nil {
+		return nil, errors.New("auth clock is required")
+	}
 	origin := http.NewCrossOriginProtection()
-	if err := origin.AddTrustedOrigin(publicURL); err != nil {
+	if err := origin.AddTrustedOrigin(strings.TrimSuffix(publicURL, "/")); err != nil {
 		return nil, err
 	}
-	return &Handler{store: store, service: service, csrf: csrf, clock: clock, development: development, origin: origin}, nil
+	if logger == nil {
+		return nil, errors.New("auth logger is required")
+	}
+	if recordFailure == nil {
+		return nil, errors.New("auth failure recorder is required")
+	}
+	return &Handler{service: service, csrf: csrf, clock: clock, development: development, origin: origin, logger: logger, recordFailure: recordFailure}, nil
 }
-func (handler *Handler) Routes(router chi.Router, protected http.Handler) {
+func (handler *Handler) Routes(router chi.Router) {
 	router.Get("/login", handler.GetLogin)
-	router.Post("/login", handler.PostLogin)
-	router.With(handler.RequireLogin).Post("/logout", handler.PostLogout)
+	router.With(handler.ProtectLoginPost).Post("/login", handler.PostLogin)
+	router.With(handler.RequireLogin, handler.ProtectAuthenticatedPost).Post("/logout", handler.PostLogout)
 	router.With(handler.RequireLogin).Get("/account/password", handler.GetPassword)
-	router.With(handler.RequireLogin).Post("/account/password", handler.PostPassword)
-	// Phase 2 foundation: keep "/" public so Phase 1 home tests remain valid
-	// Full protected mount will be enabled when Phase 2 integration completes:
-	// router.With(handler.RequireLogin).Handle("/", protected)
-	_ = protected
+	router.With(handler.RequireLogin, handler.ProtectAuthenticatedPost).Post("/account/password", handler.PostPassword)
 }
 func (handler *Handler) GetLogin(w http.ResponseWriter, r *http.Request) {
-	contextValue, token, expires := handler.loginContext(r)
+	contextValue, token, expires, err := handler.loginContext(r)
+	if err != nil {
+		handler.renderBackendFailure(w, r, "login_form_failed", "The sign-in form could not be prepared. Reload the page and try again.", err, "")
+		return
+	}
 	if contextValue != "" {
 		handler.setLoginCookie(w, contextValue, expires)
 	}
-	handler.renderLogin(w, http.StatusOK, token, "")
+	handler.renderLogin(w, r, http.StatusOK, token, "", "")
 }
 func (handler *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
-	if !handler.validOrigin(w, r) || !handler.parseForm(w, r) {
-		return
-	}
+	handler.respondToLogin(w, r, handler.loginFromRequest(r))
+}
+
+func (handler *Handler) loginFromRequest(r *http.Request) loginResponse {
 	cookie, _ := r.Cookie(handler.loginCookieName())
-	token := r.FormValue(CSRFField)
-	if cookie == nil || !handler.csrf.ValidateLogin(cookie.Value, token, handler.clock()) {
-		handler.csrfFailure(w, r, true)
-		return
+	contextCookie := ""
+	if cookie != nil {
+		contextCookie = cookie.Value
 	}
-	user, session, expires, err := handler.service.Login(r.Context(), r.FormValue("email"), r.FormValue("password"))
-	_ = user
-	if err != nil {
-		fresh, _ := handler.csrf.LoginToken(cookie.Value, handler.clock())
-		handler.renderLogin(w, http.StatusUnprocessableEntity, fresh, err.Error())
+	email := r.PostForm.Get("email")
+	_, session, expires, err := handler.service.Login(r.Context(), email, r.PostForm.Get("password"))
+	return loginResponse{contextCookie: contextCookie, email: email, session: session, expires: expires, err: err}
+}
+
+func (handler *Handler) respondToLogin(w http.ResponseWriter, r *http.Request, response loginResponse) {
+	if response.err != nil {
+		if message, status, rejected := loginRejection(response.err); rejected {
+			fresh, tokenError := handler.csrf.LoginToken(response.contextCookie, handler.clock())
+			if tokenError != nil {
+				handler.renderBackendFailure(w, r, "login_form_failed", "The sign-in form could not be prepared. Reload the page and try again.", tokenError, "")
+				return
+			}
+			handler.renderLogin(w, r, status, fresh, message, response.email)
+			return
+		}
+		handler.renderBackendFailure(w, r, "login_failed", "GoPanel could not complete sign-in. Try again.", response.err, "")
 		return
 	}
 	handler.clearLoginCookie(w)
-	handler.setSessionCookie(w, session, expires)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	handler.clearLegacySessionCookie(w)
+	handler.setSessionCookie(w, response.session, response.expires)
+	handler.redirect(w, r, "/")
 }
 func (handler *Handler) PostLogout(w http.ResponseWriter, r *http.Request) {
-	if !handler.validOrigin(w, r) || !handler.parseForm(w, r) {
+	handler.respondToLogout(w, r, handler.service.Logout(r.Context(), handler.sessionToken(r)))
+}
+
+func (handler *Handler) respondToLogout(w http.ResponseWriter, r *http.Request, err error) {
+	if err != nil {
+		handler.renderBackendFailure(w, r, "logout_failed", "GoPanel could not sign you out. Reload the page and try again.", err, currentUserID(r))
 		return
 	}
-	session := handler.sessionToken(r)
-	if !handler.csrf.ValidateAuth(session, r.FormValue(CSRFField)) {
-		handler.csrfFailure(w, r, false)
-		return
-	}
-	_ = handler.store.DeleteSession(r.Context(), session)
 	handler.clearSessionCookie(w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	handler.clearLegacySessionCookie(w)
+	handler.redirect(w, r, "/login")
 }
 func (handler *Handler) GetPassword(w http.ResponseWriter, r *http.Request) {
 	session := handler.sessionToken(r)
-	token, _ := handler.csrf.AuthToken(session)
-	handler.renderPassword(w, http.StatusOK, token, "")
+	token, err := handler.csrf.AuthToken(session)
+	if err != nil {
+		handler.renderBackendFailure(w, r, "password_form_failed", "The password form could not be prepared. Reload the page and try again.", err, currentUserID(r))
+		return
+	}
+	handler.renderPassword(w, r, http.StatusOK, token, "")
 }
 func (handler *Handler) PostPassword(w http.ResponseWriter, r *http.Request) {
-	if !handler.validOrigin(w, r) || !handler.parseForm(w, r) {
-		return
-	}
+	handler.respondToPasswordChange(w, r, handler.changePasswordFromRequest(r))
+}
+
+func (handler *Handler) changePasswordFromRequest(r *http.Request) passwordResponse {
 	session := handler.sessionToken(r)
-	if !handler.csrf.ValidateAuth(session, r.FormValue(CSRFField)) {
-		handler.csrfFailure(w, r, false)
-		return
-	}
 	user, _ := UserFromContext(r.Context())
-	if err := handler.service.ChangePassword(r.Context(), user, r.FormValue("current_password"), r.FormValue("new_password"), r.FormValue("confirm_password")); err != nil {
-		token, _ := handler.csrf.AuthToken(session)
-		handler.renderPassword(w, http.StatusUnprocessableEntity, token, err.Error())
+	err := handler.service.ChangePassword(r.Context(), user, r.PostForm.Get("current_password"), r.PostForm.Get("new_password"), r.PostForm.Get("confirm_password"))
+	return passwordResponse{user: user, session: session, err: err}
+}
+
+func (handler *Handler) respondToPasswordChange(w http.ResponseWriter, r *http.Request, response passwordResponse) {
+	if response.err != nil {
+		if message, rejected := passwordRejection(response.err); rejected {
+			token, tokenError := handler.csrf.AuthToken(response.session)
+			if tokenError != nil {
+				handler.renderBackendFailure(w, r, "password_form_failed", "The password form could not be prepared. Reload the page and try again.", tokenError, response.user.ID)
+				return
+			}
+			handler.renderPassword(w, r, http.StatusUnprocessableEntity, token, message)
+			return
+		}
+		handler.renderBackendFailure(w, r, "password_change_failed", "GoPanel could not change your password. Try again.", response.err, response.user.ID)
 		return
 	}
 	handler.clearSessionCookie(w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-func (handler *Handler) parseForm(w http.ResponseWriter, r *http.Request) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
-	if err := r.ParseForm(); err != nil {
-		handler.renderDenied(w, r, http.StatusBadRequest, "The submitted form is too large or invalid.")
-		return false
-	}
-	return true
-}
-func (handler *Handler) validOrigin(w http.ResponseWriter, r *http.Request) bool {
-	if err := handler.origin.Check(r); err != nil {
-		handler.renderDenied(w, r, http.StatusForbidden, "This request was blocked because it came from another site.")
-		return false
-	}
-	return true
+	handler.clearLegacySessionCookie(w)
+	handler.redirect(w, r, "/login")
 }
 func (handler *Handler) csrfFailure(w http.ResponseWriter, r *http.Request, fresh bool) {
 	if fresh {
 		value, token, expires, err := handler.csrf.NewLoginContext(handler.clock())
-		if err == nil {
-			handler.setLoginCookie(w, value, expires)
-			handler.renderLogin(w, http.StatusForbidden, token, "This form has expired or is invalid. Reload the page and try again.")
+		if err != nil {
+			handler.renderBackendFailure(w, r, "login_form_failed", "The sign-in form could not be prepared. Reload the page and try again.", err, "")
 			return
 		}
+		handler.setLoginCookie(w, value, expires)
+		handler.renderLogin(w, r, http.StatusForbidden, token, "This form has expired or is invalid. Reload the page and try again.", r.PostForm.Get("email"))
+		return
 	}
 	handler.renderDenied(w, r, http.StatusForbidden, "This form has expired or is invalid. Reload the page and try again.")
 }
-func (handler *Handler) loginContext(r *http.Request) (string, string, time.Time) {
+func (handler *Handler) loginContext(r *http.Request) (string, string, time.Time, error) {
 	if cookie, err := r.Cookie(handler.loginCookieName()); err == nil {
 		if token, err := handler.csrf.LoginToken(cookie.Value, handler.clock()); err == nil {
-			return "", token, time.Time{}
+			return "", token, time.Time{}, nil
 		}
 	}
-	value, token, expires, _ := handler.csrf.NewLoginContext(handler.clock())
-	return value, token, expires
+	return handler.csrf.NewLoginContext(handler.clock())
 }
 func (handler *Handler) sessionToken(r *http.Request) string {
-	cookie, err := r.Cookie(sessionCookie)
+	cookie, err := r.Cookie(handler.sessionCookieName())
 	if err != nil {
 		return ""
 	}
 	return cookie.Value
+}
+func (handler *Handler) sessionCookieName() string {
+	if handler.development {
+		return sessionCookieDev
+	}
+	return sessionCookieProd
 }
 func (handler *Handler) loginCookieName() string {
 	if handler.development {
@@ -157,34 +215,136 @@ func (handler *Handler) loginCookieName() string {
 	return loginCookieProd
 }
 func (handler *Handler) setLoginCookie(w http.ResponseWriter, value string, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{Name: handler.loginCookieName(), Value: value, Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, Expires: expires, MaxAge: int(time.Until(expires).Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: handler.loginCookieName(), Value: value, Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, Expires: expires, MaxAge: handler.cookieMaxAge(expires)})
 }
 func (handler *Handler) clearLoginCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{Name: handler.loginCookieName(), Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
 func (handler *Handler) setSessionCookie(w http.ResponseWriter, value string, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: value, Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, Expires: expires, MaxAge: int(time.Until(expires).Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: handler.sessionCookieName(), Value: value, Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, Expires: expires, MaxAge: handler.cookieMaxAge(expires)})
 }
 func (handler *Handler) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: handler.sessionCookieName(), Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
-func (handler *Handler) renderLogin(w http.ResponseWriter, status int, token, message string) {
-	handler.renderForm(w, status, "Sign in", token, message, `<label>Email<input name="email" type="email" autocomplete="username" required></label><p>Enter your account email.</p><label>Password<input name="password" type="password" autocomplete="current-password" required></label><p>Enter your password.</p><button type="submit">Sign in</button>`, "/login")
+func (handler *Handler) clearLegacySessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: legacySessionCookie, Path: "/", HttpOnly: true, Secure: !handler.development, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
-func (handler *Handler) renderPassword(w http.ResponseWriter, status int, token, message string) {
-	handler.renderForm(w, status, "Change password", token, message, `<label>Current password<input name="current_password" type="password" required></label><label>New password<input name="new_password" type="password" required></label><p>Use at least 12 characters.</p><label>Confirm new password<input name="confirm_password" type="password" required></label><button type="submit">Change password</button>`, "/account/password")
+func (handler *Handler) cookieMaxAge(expires time.Time) int {
+	return int(expires.Sub(handler.clock()).Seconds())
 }
-func (handler *Handler) renderForm(w http.ResponseWriter, status int, title, token, message, fields, action string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	fmt.Fprintf(w, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/static/output.css"><title>%s</title></head><body class="bg-slate-950 text-slate-100"><main class="mx-auto max-w-md p-6"><h1>%s</h1><div role="alert">%s</div><form method="post" action="%s" hx-post="%s" hx-swap="outerHTML"><input type="hidden" name="csrf_token" value="%s">%s</form></main></body></html>`, html.EscapeString(title), html.EscapeString(title), html.EscapeString(message), action, action, html.EscapeString(token), fields)
+func (handler *Handler) redirect(w http.ResponseWriter, r *http.Request, target string) {
+	if isHTMXRequest(r) {
+		w.Header().Set("HX-Redirect", target)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+func (handler *Handler) renderLogin(w http.ResponseWriter, r *http.Request, status int, token, message, email string) {
+	component := authpages.LoginPage(token, message, email)
+	if isHTMXRequest(r) {
+		component = authpages.LoginFragment(token, message, email)
+	}
+	handler.renderAuthComponent(w, r, status, component)
+}
+func (handler *Handler) renderPassword(w http.ResponseWriter, r *http.Request, status int, token, message string) {
+	component := authpages.PasswordPage(token, message)
+	if isHTMXRequest(r) {
+		component = authpages.PasswordFragment(token, message)
+	}
+	handler.renderAuthComponent(w, r, status, component)
 }
 func (handler *Handler) renderDenied(w http.ResponseWriter, r *http.Request, status int, message string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	fmt.Fprintf(w, `<div role="alert">%s</div>`, html.EscapeString(message))
+	component := authpages.DeniedPage(message)
+	if isHTMXRequest(r) {
+		component = authpages.DeniedFragment(message)
+	}
+	handler.renderAuthComponent(w, r, status, component)
 }
 
-var _ = strings.TrimSpace
+func (handler *Handler) renderAuthComponent(w http.ResponseWriter, r *http.Request, status int, component templ.Component) {
+	var output bytes.Buffer
+	if err := component.Render(r.Context(), &output); err != nil {
+		handler.renderAuthFallback(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if _, err := w.Write(output.Bytes()); err != nil {
+		handler.recordFailure(DiagnosticFailure{
+			Event:           "auth_response_write_failed",
+			PublicMessage:   "The response could not be completed.",
+			TechnicalDetail: "authentication response write failed",
+			UserID:          currentUserID(r),
+			HTTPStatus:      status,
+		})
+	}
+}
 
-func (handler *Handler) CSRF() *CSRF { return handler.csrf }
+func (handler *Handler) AuthenticatedFormToken(r *http.Request) (string, error) {
+	session, ok := SessionTokenFromContext(r.Context())
+	if !ok {
+		return "", ErrNotFound
+	}
+	return handler.csrf.AuthToken(session)
+}
+
+func loginRejection(err error) (string, int, bool) {
+	if errors.Is(err, ErrInvalidCredentials) {
+		return "Email or password is incorrect.", http.StatusUnprocessableEntity, true
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return "Too many sign-in attempts. Wait briefly and try again.", http.StatusTooManyRequests, true
+	}
+	return "", 0, false
+}
+
+func passwordRejection(err error) (string, bool) {
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		return "Current password is incorrect.", true
+	case errors.Is(err, ErrPasswordMismatch):
+		return "New passwords do not match.", true
+	case errors.Is(err, ErrPasswordTooShort):
+		return "New password must contain at least 12 characters.", true
+	case errors.Is(err, ErrPasswordTooLong):
+		return "New password must contain at most 1024 characters.", true
+	default:
+		return "", false
+	}
+}
+
+func (handler *Handler) renderBackendFailure(w http.ResponseWriter, r *http.Request, event, publicMessage string, err error, userID string) {
+	reference := handler.recordFailure(DiagnosticFailure{
+		Event:           event,
+		PublicMessage:   publicMessage,
+		TechnicalDetail: safeTechnicalDetail(err),
+		UserID:          userID,
+		HTTPStatus:      http.StatusInternalServerError,
+	})
+	component := authpages.FailurePage(publicMessage, reference)
+	if isHTMXRequest(r) {
+		component = authpages.FailureFragment(publicMessage, reference)
+	}
+	handler.renderAuthComponent(w, r, http.StatusInternalServerError, component)
+}
+
+func (handler *Handler) renderAuthFallback(w http.ResponseWriter, r *http.Request, err error) {
+	reference := handler.recordFailure(DiagnosticFailure{
+		Event:           "auth_render_failed",
+		PublicMessage:   "The page could not be rendered.",
+		TechnicalDetail: safeTechnicalDetail(BackendError{Operation: "response rendering", Cause: err}),
+		UserID:          currentUserID(r),
+		HTTPStatus:      http.StatusInternalServerError,
+	})
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	_, _ = fmt.Fprintf(w, `<div role="alert" data-request-region="true">The page could not be rendered. Error reference: <code>%s</code>.</div>`, html.EscapeString(reference))
+}
+
+func currentUserID(r *http.Request) string {
+	user, _ := UserFromContext(r.Context())
+	return user.ID
+}
+
+func isHTMXRequest(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }

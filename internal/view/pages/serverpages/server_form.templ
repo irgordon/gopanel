@@ -18,7 +18,7 @@ templ ServerFormPage(csrfToken string, input DisplayInput, fieldErrors map[strin
 templ ServerFormFragment(csrfToken string, input DisplayInput, fieldErrors map[string]string, formError string) {
 	<div data-request-region="true" class="rounded-3xl border border-white/10 bg-white/[0.045] p-6">
 		<h1 class="text-xl font-bold text-white">Add server</h1>
-		<p class="mt-2 text-sm leading-6 text-slate-400">Register server identity and connection type. Credential references are added later by integrations. No remote contact is made on save.</p>
+		<p class="mt-2 text-sm leading-6 text-slate-400">Register server identity and connection type. No remote contact is made on save. Integration credentials are configured only after the owning integration is available.</p>
 		if formError != "" {
 			<div role="alert" class="mt-4 rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-rose-50">
 				<p class="text-sm">{ formError }</p>
@@ -40,7 +40,6 @@ templ ServerFormFragment(csrfToken string, input DisplayInput, fieldErrors map[s
 				</select>
 				<p id="connection_type-error" class="mt-2 min-h-6 text-sm font-medium text-rose-300" aria-live="polite">{ fieldErrors["connection_type"] }</p>
 			</div>
-			@view.FormField("credential_reference", "Credential reference (optional)", "credential_reference", input.CredentialReference, "Opaque reference — not validated until owning integration exists. Example: prod-context", fieldErrors["credential_reference"])
 			@view.Button("Add server")
 		</form>
 	</div>

@@ -248,9 +248,12 @@ audit_log (
     target_type TEXT NOT NULL,       -- server, container, proxy_route, secret_ref
     target_id TEXT NOT NULL,
     result TEXT NOT NULL,            -- attempted, success, failed
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 )
 ```
+
+Before Phase 4, server registration keeps `credential_reference` null. Only the integration that understands a reference may validate and populate it.
 
 Enable SQLite foreign-key enforcement with:
 

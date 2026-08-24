@@ -1,6 +1,7 @@
 name: build
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
     paths:
@@ -84,6 +85,9 @@ jobs:
           templ version
           npm ls "tailwindcss@${TAILWIND_VERSION}" "@tailwindcss/cli@${TAILWIND_VERSION}"
 
+      - name: Verify Go Module State
+        run: go mod tidy -diff
+
       - name: Test Browser Error Handling
         run: |
           set -euo pipefail
@@ -121,6 +125,15 @@ jobs:
 
       - name: Test Go Race
         run: go test -race -count=1 ./...
+
+      - name: Verify Go Formatting
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l cmd internal web)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
 
       - name: Go Vet
         run: go vet ./...

@@ -100,33 +100,52 @@ func (store *Store) FindSession(ctx context.Context, token string, now time.Time
 func (store *Store) DeleteSession(ctx context.Context, token string) error {
 	digest := sha256.Sum256([]byte(token))
 	_, err := store.database.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash=?`, hex.EncodeToString(digest[:]))
-	return err
+	if err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
 }
 func (store *Store) DeleteUserSessions(ctx context.Context, userID string) error {
 	_, err := store.database.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete user sessions: %w", err)
+	}
+	return nil
 }
 func (store *Store) UpdatePassword(ctx context.Context, userID, hash string) error {
 	tx, err := store.database.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin password update: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE users SET password_hash=?,updated_at=? WHERE id=?`, hash, time.Now().UTC().Format(time.RFC3339Nano), userID); err != nil {
-		tx.Rollback()
-		return err
+		return rollbackPasswordUpdate(tx, fmt.Errorf("update password: %w", err))
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, userID); err != nil {
-		tx.Rollback()
-		return err
+		return rollbackPasswordUpdate(tx, fmt.Errorf("invalidate sessions: %w", err))
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit password update: %w", err)
+	}
+	return nil
 }
 func (store *Store) CleanupExpired(ctx context.Context, now time.Time) (int64, error) {
 	result, err := store.database.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < ?`, now.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+	removed, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read expired session cleanup result: %w", err)
+	}
+	return removed, nil
+}
+
+func rollbackPasswordUpdate(transaction *sql.Tx, updateError error) error {
+	rollbackError := transaction.Rollback()
+	if rollbackError == nil {
+		return updateError
+	}
+	return errors.Join(updateError, fmt.Errorf("rollback password update: %w", rollbackError))
 }
 
 func randomID() (string, error) {

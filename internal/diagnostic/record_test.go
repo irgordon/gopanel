@@ -56,6 +56,19 @@ func TestRecorderRedactsSensitiveValues(t *testing.T) {
 	}
 }
 
+func TestRecorderRedactsNestedJSONSecrets(t *testing.T) {
+	recorder, _ := newTestRecorder()
+	record := recorder.Record(Input{
+		TechnicalDetail: `{"request":{"password":"hunter2","metadata":{"api_key":"key-value"}}}`,
+	})
+
+	for _, sensitive := range []string{"hunter2", "key-value"} {
+		if strings.Contains(record.TechnicalDetail, sensitive) {
+			t.Fatalf("expected %q to be redacted from %q", sensitive, record.TechnicalDetail)
+		}
+	}
+}
+
 func TestRecorderEvictsOldestRecordAtCapacity(t *testing.T) {
 	recorder, _ := newTestRecorder()
 	identifiers := make([]string, 0, MaxRecords+5)

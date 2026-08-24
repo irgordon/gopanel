@@ -54,10 +54,10 @@ func VerifyUnknownPassword(password string) {
 
 func validatePassword(password string) error {
 	if len(password) < minimumPassword {
-		return fmt.Errorf("password must contain at least %d bytes", minimumPassword)
+		return fmt.Errorf("%w: password must contain at least %d bytes", ErrPasswordTooShort, minimumPassword)
 	}
 	if len(password) > maximumPassword {
-		return fmt.Errorf("password must contain at most %d bytes", maximumPassword)
+		return fmt.Errorf("%w: password must contain at most %d bytes", ErrPasswordTooLong, maximumPassword)
 	}
 	return nil
 }

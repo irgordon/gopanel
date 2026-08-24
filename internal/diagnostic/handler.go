@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 
@@ -37,10 +38,10 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 	display := toDisplayRecords(records)
 	if isHTMXRequest(r) {
-		renderDiagnostic(w, r, diagnosticpages.ErrorListFragment(display))
+		h.render(w, r, http.StatusOK, diagnosticpages.ErrorListFragment(display))
 		return
 	}
-	renderDiagnostic(w, r, diagnosticpages.ErrorListPage(display))
+	h.render(w, r, http.StatusOK, diagnosticpages.ErrorListPage(display))
 }
 
 func (h *Handler) HandleDetail(w http.ResponseWriter, r *http.Request) {
@@ -48,20 +49,21 @@ func (h *Handler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	record, found := h.recorder.Lookup(id)
 	if !found {
+		h.logger.Info("security", "event", "error_panel_access", "user_id", user.ID, "action", "view_missing_error")
 		if isHTMXRequest(r) {
-			renderDiagnostic(w, r, diagnosticpages.ErrorNotFoundFragment(id))
+			h.render(w, r, http.StatusNotFound, diagnosticpages.ErrorNotFoundFragment(id))
 			return
 		}
-		renderDiagnostic(w, r, diagnosticpages.ErrorNotFoundPage(id))
+		h.render(w, r, http.StatusNotFound, diagnosticpages.ErrorNotFoundPage(id))
 		return
 	}
 	h.logger.Info("security", "event", "error_panel_access", "user_id", user.ID, "action", "view_error", "error_ref", record.ID)
 	display := toDisplayRecord(record)
 	if isHTMXRequest(r) {
-		renderDiagnostic(w, r, diagnosticpages.ErrorDetailFragment(display))
+		h.render(w, r, http.StatusOK, diagnosticpages.ErrorDetailFragment(display))
 		return
 	}
-	renderDiagnostic(w, r, diagnosticpages.ErrorDetailPage(display))
+	h.render(w, r, http.StatusOK, diagnosticpages.ErrorDetailPage(display))
 }
 
 func toDisplayRecord(r Record) diagnosticpages.DisplayRecord {
@@ -81,17 +83,26 @@ func toDisplayRecords(records []Record) []diagnosticpages.DisplayRecord {
 	return out
 }
 
-func renderDiagnostic(w http.ResponseWriter, r *http.Request, component templ.Component) {
+func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, component templ.Component) {
 	body, err := renderComponent(r.Context(), component)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("<div role=\"alert\">The page could not be rendered. Try again.</div>"))
+		reference := h.recordRenderFailure(r, err)
+		h.writeRenderFailure(w, r, reference)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
+	w.WriteHeader(status)
+	if _, err := w.Write(body); err != nil {
+		h.recorder.Record(Input{
+			Event:           "error_panel_response_write_failed",
+			Component:       "presentation",
+			PublicMessage:   "The Error Log response could not be completed.",
+			TechnicalDetail: "diagnostic response write failed",
+			UserID:          currentUserID(r),
+			Action:          r.URL.Path,
+			HTTPStatus:      status,
+		})
+	}
 }
 
 func renderComponent(ctx context.Context, component templ.Component) ([]byte, error) {
@@ -104,4 +115,37 @@ func renderComponent(ctx context.Context, component templ.Component) ([]byte, er
 
 func isHTMXRequest(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
+}
+
+func (h *Handler) recordRenderFailure(r *http.Request, err error) string {
+	record := h.recorder.Record(Input{
+		Event:           "error_panel_render_failed",
+		Component:       "presentation",
+		PublicMessage:   "The Error Log page could not be rendered.",
+		TechnicalDetail: fmt.Sprintf("diagnostic render failed: error_type=%T", err),
+		UserID:          currentUserID(r),
+		Action:          r.URL.Path,
+		HTTPStatus:      http.StatusInternalServerError,
+	})
+	return record.ID
+}
+
+func (h *Handler) writeRenderFailure(w http.ResponseWriter, r *http.Request, reference string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	message := `The page could not be rendered. Try again. Error reference: <code>` + html.EscapeString(reference) + `</code>.`
+	if isHTMXRequest(r) {
+		if _, err := w.Write([]byte(`<div role="alert" data-request-region="true">` + message + `</div>`)); err != nil {
+			h.logger.Error("diagnostic response write failed", "error_ref", reference)
+		}
+		return
+	}
+	if _, err := w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>GoPanel error</title></head><body><main><h1>GoPanel could not render the Error Log</h1><p>` + message + `</p></main></body></html>`)); err != nil {
+		h.logger.Error("diagnostic response write failed", "error_ref", reference)
+	}
+}
+
+func currentUserID(r *http.Request) string {
+	user, _ := auth.UserFromContext(r.Context())
+	return user.ID
 }

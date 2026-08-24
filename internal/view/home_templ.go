@@ -8,7 +8,13 @@ package view
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func HomePage() templ.Component {
+type HomeModel struct {
+	Name      string
+	IsAdmin   bool
+	CSRFToken string
+}
+
+func HomePage(model HomeModel) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -41,59 +47,41 @@ func HomePage() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"relative isolate min-h-screen overflow-hidden\"><div class=\"pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_40%)]\"></div><div class=\"mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-10 lg:px-8\"><header class=\"flex items-center justify-between gap-4\"><a href=\"/\" class=\"text-lg font-black tracking-tight text-white\" aria-label=\"GoPanel home\">GoPanel</a>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"relative isolate min-h-screen overflow-hidden\"><div class=\"pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_40%)]\"></div><div class=\"mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-10 lg:px-8\"><header class=\"flex flex-wrap items-center justify-between gap-4\"><div><a href=\"/\" class=\"text-lg font-black tracking-tight text-white\" aria-label=\"GoPanel home\">GoPanel</a><p class=\"mt-1 text-sm text-slate-400\">Signed in as ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = Badge("Phase 0 active").Render(ctx, templ_7745c5c3_Buffer)
+			var templ_7745c5c3_Var3 string
+			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(model.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/home.templ`, Line: 17, Col: 70}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</header><section class=\"max-w-3xl py-8 sm:py-14\" aria-labelledby=\"page-title\"><p class=\"text-sm font-semibold tracking-[0.2em] text-cyan-300 uppercase\">Control plane foundation</p><h1 id=\"page-title\" class=\"mt-4 text-4xl font-black tracking-tight text-balance text-white sm:text-6xl\">The GoPanel scaffold is running.</h1><p class=\"mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8\">A real Go server is rendering this page, serving embedded local assets, and holding an open SQLite connection. Infrastructure features remain deliberately deferred.</p></section><section class=\"grid gap-4 md:grid-cols-3\" aria-label=\"Phase 0 boundaries\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</p></div><div class=\"flex items-center gap-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var3 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"text-sm font-semibold text-cyan-300\">Application</p><h2 class=\"mt-3 text-xl font-bold text-white\">Chi routes, one owner</h2><p class=\"mt-3 text-sm leading-6 text-slate-400\">The application package owns routing and the minimal development lifecycle.</p>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				return nil
-			})
-			templ_7745c5c3_Err = Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = Badge("Pre-Phase 4").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var4 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-				if !templ_7745c5c3_IsBuffer {
-					defer func() {
-						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-						if templ_7745c5c3_Err == nil {
-							templ_7745c5c3_Err = templ_7745c5c3_BufErr
-						}
-					}()
-				}
-				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-sm font-semibold text-violet-300\">Storage</p><h2 class=\"mt-3 text-xl font-bold text-white\">SQLite, no schema yet</h2><p class=\"mt-3 text-sm leading-6 text-slate-400\">Phase 0 proves driver wiring without creating future capability tables.</p>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				return nil
-			})
-			templ_7745c5c3_Err = Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<form method=\"post\" action=\"/logout\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var4 string
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(model.CSRFToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/home.templ`, Line: 22, Col: 69}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\" class=\"inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white\">Sign out</button></form></div></header><section class=\"max-w-3xl py-8 sm:py-14\" aria-labelledby=\"page-title\"><p class=\"text-sm font-semibold tracking-[0.2em] text-cyan-300 uppercase\">Control plane</p><h1 id=\"page-title\" class=\"mt-4 text-4xl font-black tracking-tight text-balance text-white sm:text-6xl\">Register and manage infrastructure safely.</h1><p class=\"mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8\">Authentication, process-local diagnostics, and audited server registration are active. Docker operations begin in Phase 4.</p></section><section class=\"grid gap-4 md:grid-cols-3\" aria-label=\"Available GoPanel capabilities\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -109,7 +97,7 @@ func HomePage() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"text-sm font-semibold text-emerald-300\">Presentation</p><h2 class=\"mt-3 text-xl font-bold text-white\">HTML works first</h2><p class=\"mt-3 text-sm leading-6 text-slate-400\">Templ renders complete documents; HTMX only enhances the same server path.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"text-sm font-semibold text-cyan-300\">Servers</p><h2 class=\"mt-3 text-xl font-bold text-white\">Registered infrastructure</h2><p class=\"mt-3 text-sm leading-6 text-slate-400\">View validated server identity and connection type without contacting the remote system.</p><a href=\"/servers\" class=\"mt-5 inline-flex min-h-11 items-center rounded-xl border border-cyan-300/30 px-4 py-2 text-sm font-semibold text-cyan-200\">View servers</a>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -119,13 +107,59 @@ func HomePage() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</section><footer class=\"border-t border-white/10 py-6 text-sm text-slate-500\">GoPanel v0.0.0 · No authentication, diagnostics, audit, or infrastructure integrations are implemented in Phase 0.</footer></div></main>")
+			templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+				if !templ_7745c5c3_IsBuffer {
+					defer func() {
+						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err == nil {
+							templ_7745c5c3_Err = templ_7745c5c3_BufErr
+						}
+					}()
+				}
+				ctx = templ.InitializeContext(ctx)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p class=\"text-sm font-semibold text-violet-300\">Account</p><h2 class=\"mt-3 text-xl font-bold text-white\">Password and sessions</h2><p class=\"mt-3 text-sm leading-6 text-slate-400\">Change your password and invalidate existing sessions.</p><a href=\"/account/password\" class=\"mt-5 inline-flex min-h-11 items-center rounded-xl border border-violet-300/30 px-4 py-2 text-sm font-semibold text-violet-200\">Change password</a>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				return nil
+			})
+			templ_7745c5c3_Err = Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if model.IsAdmin {
+				templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+					if !templ_7745c5c3_IsBuffer {
+						defer func() {
+							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+							if templ_7745c5c3_Err == nil {
+								templ_7745c5c3_Err = templ_7745c5c3_BufErr
+							}
+						}()
+					}
+					ctx = templ.InitializeContext(ctx)
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"text-sm font-semibold text-emerald-300\">Diagnostics</p><h2 class=\"mt-3 text-xl font-bold text-white\">Current-process Error Log</h2><p class=\"mt-3 text-sm leading-6 text-slate-400\">Inspect safely mapped errors and correlation references from this process.</p><a href=\"/errors\" class=\"mt-5 inline-flex min-h-11 items-center rounded-xl border border-emerald-300/30 px-4 py-2 text-sm font-semibold text-emerald-200\">Open Error Log</a>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					return nil
+				})
+				templ_7745c5c3_Err = Card().Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section><footer class=\"border-t border-white/10 py-6 text-sm text-slate-500\">GoPanel pre-Phase 4 · Managed systems remain authoritative for operational state.</footer></div></main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("GoPanel — Phase 0").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("GoPanel").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -149,12 +183,12 @@ func NotFoundPage() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var6 == nil {
-			templ_7745c5c3_Var6 = templ.NopComponent
+		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var8 == nil {
+			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var9 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -166,7 +200,7 @@ func NotFoundPage() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<main class=\"mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center px-4 py-10 sm:px-6\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<main class=\"mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center px-4 py-10 sm:px-6\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -174,13 +208,13 @@ func NotFoundPage() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("Page not found — GoPanel").Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("Page not found — GoPanel").Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -204,12 +238,12 @@ func NotFoundFragment() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"rounded-3xl border border-rose-300/25 bg-rose-300/10 p-6 text-rose-50\" role=\"alert\"><p class=\"text-sm font-semibold tracking-wide text-rose-300 uppercase\">404 · Page not found</p><h1 class=\"mt-3 text-2xl font-bold text-white\">GoPanel could not find that page.</h1><p class=\"mt-3 text-sm leading-6 text-rose-100/80\">Check the address or return to the scaffold home page.</p><a href=\"/\" class=\"mt-5 inline-flex min-h-11 items-center rounded-xl border border-rose-200/25 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10\">Return to GoPanel</a></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"rounded-3xl border border-rose-300/25 bg-rose-300/10 p-6 text-rose-50\" role=\"alert\"><p class=\"text-sm font-semibold tracking-wide text-rose-300 uppercase\">404 · Page not found</p><h1 class=\"mt-3 text-2xl font-bold text-white\">GoPanel could not find that page.</h1><p class=\"mt-3 text-sm leading-6 text-rose-100/80\">Check the address or return to GoPanel.</p><a href=\"/\" class=\"mt-5 inline-flex min-h-11 items-center rounded-xl border border-rose-200/25 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10\">Return to GoPanel</a></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

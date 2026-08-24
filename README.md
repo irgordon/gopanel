@@ -6,7 +6,9 @@ Managed systems remain authoritative for their own state. GoPanel owns authentic
 
 ## Current Status
 
-Phase 1 is implemented locally. The repository contains a runnable Go application with validated startup configuration, a file-backed SQLite database, embedded forward-only migrations, structured lifecycle logging, process-local diagnostic correlation, health and readiness probes, and bounded graceful shutdown.
+GoPanel is in a pre-Phase-4 state. Phases 0, 1, 2, 2A, and 3 provide the application scaffold, lifecycle and SQLite foundation, local authentication, the administrator-only Error Log, and audited server registration. Docker connectivity and container views begin in Phase 4 and are not implemented yet.
+
+The current repair is locally validated and awaiting exact-commit CI. Literal JavaScript-disabled browser verification remains `NOT RUN` under the narrowly scoped [owner sequencing override](./docs/ADR/0002-pre-phase4-javascript-disabled-browser-override.md); the requirement remains part of later release verification.
 
 Run it locally:
 
@@ -14,12 +16,13 @@ Run it locally:
 npm ci
 templ generate
 npm run build:css
+go run ./cmd/gopanel user create-admin --database-path ./gopanel.db
 go run ./cmd/gopanel --dev
 ```
 
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080). See the [development guide](./docs/maintainers/development.md) for pinned prerequisites and validation commands.
 
-Development mode creates `gopanel.db` in the current directory. Process liveness is available at `/healthz`; SQLite-backed readiness is available at `/readyz`.
+The administrator command prompts locally for email, name, and a hidden password. Development mode creates `gopanel.db` in the current directory. Sign in at `/login`; registered servers are available at `/servers`; administrators can inspect current-process diagnostics at `/errors`. Process liveness is available at `/healthz`, and SQLite-backed readiness is available at `/readyz`.
 
 The planned v1 baseline is:
 
@@ -53,4 +56,6 @@ Coding agents must also follow [AGENTS.md](./AGENTS.md).
 
 ## Documentation
 
-Maintainer guidance includes [development](./docs/maintainers/development.md) and [operations](./docs/maintainers/operations.md). Additional guides will be added only when their related capabilities exist.
+User guidance includes [getting started](./docs/user/getting-started.md) and [server registration](./docs/user/servers.md).
+
+Maintainer guidance includes [development](./docs/maintainers/development.md), [operations](./docs/maintainers/operations.md), [authentication](./docs/maintainers/authentication.md), [error handling](./docs/maintainers/error-handling.md), and [project layout](./docs/maintainers/project-layout.md).

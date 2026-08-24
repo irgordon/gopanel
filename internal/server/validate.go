@@ -11,9 +11,12 @@ var allowedConnectionTypes = map[string]bool{
 	"docker": true, "caddy": true, "vault": true, "kubernetes": true,
 }
 
-var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 _\-\.]{1,62}[a-zA-Z0-9]$`)
+var (
+	namePattern          = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 _\-\.]{1,62}[a-zA-Z0-9]$`)
+	hostnameLabelPattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$`)
+)
 
-func ValidateInput(input Input) map[string]string {
+func ValidateInput(input Input) (ValidatedInput, map[string]string) {
 	errs := make(map[string]string)
 	if err := validateName(input.Name); err != nil {
 		errs["name"] = err.Error()
@@ -24,11 +27,14 @@ func ValidateInput(input Input) map[string]string {
 	if err := validateConnectionType(input.ConnectionType); err != nil {
 		errs["connection_type"] = err.Error()
 	}
-	// credential_reference is nullable in Phase 3; no semantic validation until owning integration
-	if input.CredentialReference != "" && len(input.CredentialReference) > 256 {
-		errs["credential_reference"] = "credential reference must be at most 256 characters"
+	if len(errs) != 0 {
+		return ValidatedInput{}, errs
 	}
-	return errs
+	return ValidatedInput{
+		Name:           strings.TrimSpace(input.Name),
+		Address:        strings.TrimSpace(input.Address),
+		ConnectionType: strings.TrimSpace(input.ConnectionType),
+	}, nil
 }
 
 func validateName(name string) error {
@@ -76,18 +82,19 @@ func isValidHostname(host string) bool {
 		if len(label) == 0 || len(label) > 63 {
 			return false
 		}
-		if !regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$`).MatchString(label) {
+		if !hostnameLabelPattern.MatchString(label) {
 			return false
 		}
 	}
 	return true
 }
 
-func validateConnectionType(ct string) error {
-	if strings.TrimSpace(ct) == "" {
+func validateConnectionType(connectionType string) error {
+	normalized := strings.TrimSpace(connectionType)
+	if normalized == "" {
 		return errors.New("connection type is required")
 	}
-	if !allowedConnectionTypes[ct] {
+	if !allowedConnectionTypes[normalized] {
 		return errors.New("connection type must be one of: docker, caddy, vault, kubernetes")
 	}
 	return nil

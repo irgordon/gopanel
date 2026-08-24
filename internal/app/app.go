@@ -22,31 +22,45 @@ import (
 )
 
 const (
-	readHeaderTimeout = 5 * time.Second
-	idleTimeout       = 60 * time.Second
-	shutdownTimeout   = 5 * time.Second
+	readHeaderTimeout      = 5 * time.Second
+	idleTimeout            = 60 * time.Second
+	shutdownTimeout        = 5 * time.Second
+	sessionCleanupInterval = 15 * time.Minute
 )
 
-type Application struct {
-	server          *http.Server
-	store           *store.Store
-	logger          *slog.Logger
-	diagnostics     *diagnostic.Recorder
-	authHandler     *auth.Handler
-	shuttingDown    atomic.Bool
-	drainTimeout    time.Duration
-	listeningSignal chan struct{}
+type SessionCleaner interface {
+	CleanupExpired(context.Context) (int64, error)
 }
 
-func New(applicationConfig config.Config, database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler) (*Application, error) {
-	if err := validateDependencies(applicationConfig, database, logger, diagnostics, authHandler); err != nil {
+type cleanupTask struct {
+	stop context.CancelFunc
+	done <-chan struct{}
+}
+
+type Application struct {
+	server            *http.Server
+	store             *store.Store
+	logger            *slog.Logger
+	diagnostics       *diagnostic.Recorder
+	authHandler       *auth.Handler
+	diagnosticHandler *diagnostic.Handler
+	serverHandler     *server.Handler
+	sessionCleaner    SessionCleaner
+	shuttingDown      atomic.Bool
+	drainTimeout      time.Duration
+	cleanupInterval   time.Duration
+	listeningSignal   chan struct{}
+}
+
+func New(applicationConfig config.Config, database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler, diagnosticHandler *diagnostic.Handler, serverHandler *server.Handler, sessionCleaner SessionCleaner) (*Application, error) {
+	if err := validateDependencies(applicationConfig, database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner); err != nil {
 		return nil, err
 	}
 	staticFiles, err := webassets.StaticFiles()
 	if err != nil {
 		return nil, err
 	}
-	application := newApplication(database, logger, diagnostics, authHandler)
+	application := newApplication(database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
 	application.server = newHTTPServer(applicationConfig.ListenAddress, application.routes(staticFiles))
 	return application, nil
 }
@@ -62,8 +76,22 @@ func (application *Application) Run(ctx context.Context) error {
 }
 
 func (application *Application) runLifecycle(ctx context.Context, listener net.Listener) error {
+	cleanup := application.startSessionCleanup(ctx)
 	serveError := application.runHTTPServer(ctx, listener)
+	cleanup.stopAndWait()
 	return application.finish(serveError)
+}
+
+func (application *Application) startSessionCleanup(ctx context.Context) cleanupTask {
+	cleanupContext, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go application.runSessionCleanup(cleanupContext, done)
+	return cleanupTask{stop: stop, done: done}
+}
+
+func (task cleanupTask) stopAndWait() {
+	task.stop()
+	<-task.done
 }
 
 func (application *Application) runHTTPServer(ctx context.Context, listener net.Listener) error {
@@ -109,40 +137,51 @@ func (application *Application) serveHTTP(listener net.Listener, serveErrors cha
 }
 
 func (application *Application) routes(staticFiles fs.FS) http.Handler {
-	router := chi.NewRouter()
-	router.Use(securityHeaders)
-	router.Get("/healthz", application.handleHealth)
-	router.Get("/readyz", application.handleReadiness)
-	router.Handle("/static/*", http.StripPrefix("/static/", http.FileServerFS(staticFiles)))
-	router.Get("/", application.handleHome)
-	// Auth foundation routes (login, logout) mounted alongside public home for Phase 2 foundation
-	protected := chi.NewRouter()
-	protected.NotFound(application.handleNotFound)
-	application.authHandler.Routes(router, protected)
-	// Phase 2A: Administrator-only Error Panel (diagnostic recorder is process-local, 200-entry)
-	diagnosticHandler := diagnostic.NewHandler(application.diagnostics, application.logger)
-	router.Group(func(r chi.Router) {
-		r.Use(application.authHandler.RequireLogin, auth.RequireAdmin)
-		diagnosticHandler.Routes(r)
-	})
-	// Phase 3: Server registration (privileged, audited, no remote contact)
-	serverStore := server.NewStore(application.store.SQLDatabase())
-	auditDB := application.store.SQLDatabase()
-	// CSRF key is owned by auth handler; reuse same instance for server handler
-	serverHandler := server.NewHandler(serverStore, auditDB, application.diagnostics, application.logger, application.authHandler.CSRF())
-	router.Group(func(r chi.Router) {
-		r.Use(application.authHandler.RequireLogin, auth.RequireAdmin)
-		serverHandler.Routes(r)
-	})
+	router := newRouter()
+	application.registerPublicRoutes(router, staticFiles)
+	application.registerAuthenticatedRoutes(router)
+	application.registerDiagnosticRoutes(router)
+	application.registerServerRoutes(router)
 	router.NotFound(application.handleNotFound)
 	return router
 }
 
-func newApplication(database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler) *Application {
-	return &Application{store: database, logger: logger, diagnostics: diagnostics, authHandler: authHandler, drainTimeout: shutdownTimeout, listeningSignal: make(chan struct{})}
+func newRouter() chi.Router {
+	router := chi.NewRouter()
+	router.Use(securityHeaders)
+	return router
 }
 
-func validateDependencies(applicationConfig config.Config, database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler) error {
+func (application *Application) registerPublicRoutes(router chi.Router, staticFiles fs.FS) {
+	router.Get("/healthz", application.handleHealth)
+	router.Get("/readyz", application.handleReadiness)
+	router.Handle("/static/*", http.StripPrefix("/static/", http.FileServerFS(staticFiles)))
+	application.authHandler.Routes(router)
+}
+
+func (application *Application) registerAuthenticatedRoutes(router chi.Router) {
+	router.With(application.authHandler.RequireLogin).Get("/", application.handleHome)
+}
+
+func (application *Application) registerDiagnosticRoutes(router chi.Router) {
+	router.Group(func(r chi.Router) {
+		r.Use(application.authHandler.RequireLogin, application.authHandler.RequireAdmin)
+		application.diagnosticHandler.Routes(r)
+	})
+}
+
+func (application *Application) registerServerRoutes(router chi.Router) {
+	router.Group(func(r chi.Router) {
+		r.Use(application.authHandler.RequireLogin, application.authHandler.RequireAdmin)
+		application.serverHandler.Routes(r, application.authHandler.ProtectAuthenticatedPost)
+	})
+}
+
+func newApplication(database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler, diagnosticHandler *diagnostic.Handler, serverHandler *server.Handler, sessionCleaner SessionCleaner) *Application {
+	return &Application{store: database, logger: logger, diagnostics: diagnostics, authHandler: authHandler, diagnosticHandler: diagnosticHandler, serverHandler: serverHandler, sessionCleaner: sessionCleaner, drainTimeout: shutdownTimeout, cleanupInterval: sessionCleanupInterval, listeningSignal: make(chan struct{})}
+}
+
+func validateDependencies(applicationConfig config.Config, database *store.Store, logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler, diagnosticHandler *diagnostic.Handler, serverHandler *server.Handler, sessionCleaner SessionCleaner) error {
 	if err := applicationConfig.Validate(); err != nil {
 		return fmt.Errorf("validate application configuration: %w", err)
 	}
@@ -158,7 +197,48 @@ func validateDependencies(applicationConfig config.Config, database *store.Store
 	if authHandler == nil {
 		return errors.New("auth handler is required")
 	}
+	if diagnosticHandler == nil {
+		return errors.New("diagnostic handler is required")
+	}
+	if serverHandler == nil {
+		return errors.New("server handler is required")
+	}
+	if sessionCleaner == nil {
+		return errors.New("session cleaner is required")
+	}
 	return nil
+}
+
+func (application *Application) runSessionCleanup(ctx context.Context, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(application.cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			application.cleanupExpiredSessions(ctx)
+		}
+	}
+}
+
+func (application *Application) cleanupExpiredSessions(ctx context.Context) {
+	removed, err := application.sessionCleaner.CleanupExpired(ctx)
+	if err != nil {
+		application.diagnostics.Record(diagnostic.Input{
+			Event:           "session_cleanup_failed",
+			Component:       "auth",
+			PublicMessage:   "Expired sessions could not be cleaned up.",
+			TechnicalDetail: "authentication session cleanup failed",
+			Action:          "cleanup_expired_sessions",
+			HTTPStatus:      http.StatusInternalServerError,
+		})
+		return
+	}
+	if removed > 0 {
+		application.logger.Info("security", "event", "expired_sessions_removed", "count", removed)
+	}
 }
 
 func newHTTPServer(address string, handler http.Handler) *http.Server {
@@ -179,22 +259,28 @@ func wrapShutdownError(err error) error {
 	return fmt.Errorf("stop HTTP server: %w", err)
 }
 
-func (application *Application) recordListening(address string) { application.logger.Info("lifecycle", "event", "listening", "address", address) }
-func (application *Application) recordShutdownInitiated()       { application.logger.Info("lifecycle", "event", "shutdown_initiated") }
-func (application *Application) recordHTTPDrainCompleted()      { application.logger.Info("lifecycle", "event", "http_drain_completed") }
+func (application *Application) recordListening(address string) {
+	application.logger.Info("lifecycle", "event", "listening", "address", address)
+}
+func (application *Application) recordShutdownInitiated() {
+	application.logger.Info("lifecycle", "event", "shutdown_initiated")
+}
+func (application *Application) recordHTTPDrainCompleted() {
+	application.logger.Info("lifecycle", "event", "http_drain_completed")
+}
 func (application *Application) recordHTTPDrainFailure(err error) {
 	event := "http_drain_failed"
 	if errors.Is(err, context.DeadlineExceeded) {
 		event = "http_drain_deadline_reached"
 	}
-	application.diagnostics.Record(diagnostic.Input{Event: event, Component: "http", PublicMessage: "GoPanel could not drain HTTP requests cleanly.", TechnicalDetail: err.Error()})
+	application.diagnostics.Record(diagnostic.Input{Event: event, Component: "http", PublicMessage: "GoPanel could not drain HTTP requests cleanly.", TechnicalDetail: fmt.Sprintf("HTTP drain failed: error_type=%T", err)})
 }
 func (application *Application) recordDatabaseClosed(err error) {
 	if err == nil {
 		application.logger.Info("lifecycle", "event", "database_closed")
 		return
 	}
-	application.diagnostics.Record(diagnostic.Input{Event: "database_close_failed", Component: "sqlite", PublicMessage: "SQLite could not be closed cleanly.", TechnicalDetail: err.Error()})
+	application.diagnostics.Record(diagnostic.Input{Event: "database_close_failed", Component: "sqlite", PublicMessage: "SQLite could not be closed cleanly.", TechnicalDetail: fmt.Sprintf("SQLite close failed: error_type=%T", err)})
 }
 func (application *Application) recordShutdownCompleted(runError error, closeError error) {
 	if runError == nil && closeError == nil {
