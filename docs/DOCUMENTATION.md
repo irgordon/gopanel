@@ -149,7 +149,7 @@ Only create a page when the capability exists. Do not create empty placeholder d
 
 ### Root files
 
-**`README.md`** — What GoPanel is, the problem it solves, current status, and links into `/docs/`.
+**`README.md`** — A concise, marketing-forward landing page with the product identity, short value proposition, badges for languages actually present in the repository, and clear links to documentation, wiki, and license. Phase status and change history belong in `ROADMAP.md` and `CHANGELOG.md`, not the README.
 
 **`AGENTS.md`** — Short routing instructions that tell coding agents which governance documents to read and how precedence works.
 

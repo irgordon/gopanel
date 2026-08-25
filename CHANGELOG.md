@@ -11,6 +11,10 @@
 - Added Docker user and maintainer documentation covering ownership, configuration, status freshness, bounded administrator-only logs, safe diagnostics, and lifecycle behavior.
 - Recorded the Phase 4 owner browser-evidence deferral without reclassifying the literal JavaScript-disabled browser result, weakening GP-023/GP-031, or removing later release verification.
 
+### Changed
+
+- Reworked the README into a concise marketing landing page with a centered project mark, actual-language badges, and direct documentation, wiki, and license links; phase status remains in the roadmap and changelog.
+
 ### Fixed
 
 - Enforced bounded, origin-checked, body-only CSRF validation before browser mutations. Query parameters can no longer supply form tokens.
