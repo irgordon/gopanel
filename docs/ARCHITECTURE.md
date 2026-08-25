@@ -137,10 +137,12 @@ There is no three-file limit. A module has as many files as needed to stay reada
     health.go                    // one finite CheckStatus operation
     handler.go
   /container/
+    config.go                    // allowlisted local Docker socket
+    client.go                    // official typed SDK boundary
     model.go
-    list.go
-    actions.go                   // explicit Start / Stop operations
-    logs.go                      // bounded log retrieval in v1
+    service.go                   // explicit read-only operations
+    status.go                    // process-local observations
+    diagnostic.go                // Docker-owned safe mapping
     handler.go
   /proxy/
     model.go
@@ -253,7 +255,7 @@ audit_log (
 )
 ```
 
-Before Phase 4, server registration keeps `credential_reference` null. Only the integration that understands a reference may validate and populate it.
+Server registration kept `credential_reference` null before Phase 4. The current Phase 4 Docker mode uses one application-configured local Unix socket and requires no reusable credential reference, so Docker server rows continue to keep it null. A later Docker connection mode may populate a reference only after Docker-owned semantic validation.
 
 Enable SQLite foreign-key enforcement with:
 
@@ -1025,6 +1027,8 @@ Do not store arbitrary user-provided file paths or environment variable names an
 There is no `env:SESSION_SECRET` mini-language and no `SESSION_SECRET` requirement for opaque server-side sessions.
 
 Phase 1 uses explicit command-line fields for `listen-address`, `database-path`, and `public-url`; `--dev` supplies loopback development defaults. This keeps configuration typed and dependency-free while configuration-file parsing remains unimplemented. Unknown flags and positional values are rejected.
+
+Phase 4 adds `--docker-socket`. The Docker module accepts only `/var/run/docker.sock` or `/run/docker.sock`; development defaults to `/var/run/docker.sock`. Registered server addresses remain identity metadata and are never passed to the Docker SDK. Arbitrary Docker URLs, TCP endpoints, environment-derived hosts, and database-provided socket paths are unsupported.
 
 ## 12. Frontend Dependencies
 

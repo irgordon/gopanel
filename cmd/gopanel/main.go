@@ -14,6 +14,7 @@ import (
 	"github.com/irgordon/gopanel/internal/audit"
 	"github.com/irgordon/gopanel/internal/auth"
 	"github.com/irgordon/gopanel/internal/config"
+	"github.com/irgordon/gopanel/internal/container"
 	"github.com/irgordon/gopanel/internal/diagnostic"
 	"github.com/irgordon/gopanel/internal/server"
 	"github.com/irgordon/gopanel/internal/store"
@@ -83,6 +84,9 @@ func (runtime process) loadConfig(arguments []string) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, runtime.recordFailure("configuration_rejected", "config", "Configuration is unusable.", err)
 	}
+	if _, err := container.ValidateConfig(container.Config{SocketPath: applicationConfig.DockerSocket}); err != nil {
+		return config.Config{}, runtime.recordFailure("docker_configuration_rejected", "docker", "Docker configuration is unusable.", err)
+	}
 	return applicationConfig, nil
 }
 
@@ -97,7 +101,7 @@ func (runtime process) openDatabase(ctx context.Context, databasePath string) (*
 
 func (runtime process) migrateDatabase(ctx context.Context, database *store.Store) error {
 	if err := database.Migrate(ctx); err != nil {
-		return runtime.closeAfterFailure(database, "migration_failed", "SQLite migration failed.", err)
+		return runtime.closeAfterFailure(database, "migration_failed", "sqlite", "SQLite migration failed.", err)
 	}
 	recordMigrationCompleted(runtime.logger)
 	return nil
@@ -109,10 +113,17 @@ func (runtime process) buildApplication(applicationConfig config.Config, databas
 		return nil, err
 	}
 	diagnosticHandler := diagnostic.NewHandler(runtime.diagnostics, runtime.logger)
-	serverHandler := runtime.buildServerHandler(database, authentication.handler)
-	application, err := app.New(applicationConfig, database, runtime.logger, runtime.diagnostics, authentication.handler, diagnosticHandler, serverHandler, authentication.service)
+	serverStore := server.NewStore(database.SQLDatabase())
+	serverService := server.NewService(serverStore, audit.NewStore(database.SQLDatabase()))
+	docker, err := runtime.buildDocker(applicationConfig, serverStore, authentication.handler)
 	if err != nil {
-		return nil, runtime.closeAfterFailure(database, "application_construction_failed", "GoPanel could not be constructed.", err)
+		return nil, runtime.closeAfterFailure(database, "docker_client_failed", "docker", "Docker client configuration is unusable.", err)
+	}
+	serverHandler := server.NewHandler(serverService, runtime.diagnostics, runtime.logger, authentication.handler.AuthenticatedFormToken, docker.statuses)
+	application, err := app.New(applicationConfig, database, runtime.logger, runtime.diagnostics, authentication.handler, diagnosticHandler, serverHandler, docker.handler, authentication.service, docker.service, docker.statuses, docker.service)
+	if err != nil {
+		closeError := docker.service.Close()
+		return nil, runtime.closeAfterFailure(database, "application_construction_failed", "application", "GoPanel could not be constructed.", errors.Join(err, closeError))
 	}
 	return application, nil
 }
@@ -126,7 +137,7 @@ func (runtime process) buildAuthentication(applicationConfig config.Config, data
 	service := auth.NewService(authStore, auth.NewLoginLimiter(time.Now), time.Now)
 	handler, err := auth.NewHandler(service, csrf, time.Now, applicationConfig.Development, applicationConfig.PublicURL, runtime.logger, diagnostic.AuthFailureRecorder(runtime.diagnostics))
 	if err != nil {
-		return authenticationDependencies{}, runtime.closeAfterFailure(database, "auth_handler_failed", "GoPanel could not create auth handler.", err)
+		return authenticationDependencies{}, runtime.closeAfterFailure(database, "auth_handler_failed", "auth", "GoPanel could not create auth handler.", err)
 	}
 	return authenticationDependencies{handler: handler, service: service}, nil
 }
@@ -134,16 +145,51 @@ func (runtime process) buildAuthentication(applicationConfig config.Config, data
 func (runtime process) createCSRF(database *store.Store) (*auth.CSRF, error) {
 	csrfKey, err := auth.NewCSRFKey()
 	if err != nil {
-		return nil, runtime.closeAfterFailure(database, "csrf_key_failed", "GoPanel could not create CSRF key.", err)
+		return nil, runtime.closeAfterFailure(database, "csrf_key_failed", "auth", "GoPanel could not create CSRF key.", err)
 	}
 	return auth.NewCSRF(csrfKey), nil
 }
 
-func (runtime process) buildServerHandler(database *store.Store, authHandler *auth.Handler) *server.Handler {
-	serverStore := server.NewStore(database.SQLDatabase())
-	auditStore := audit.NewStore(database.SQLDatabase())
-	serverService := server.NewService(serverStore, auditStore)
-	return server.NewHandler(serverService, runtime.diagnostics, runtime.logger, authHandler.AuthenticatedFormToken)
+func (runtime process) buildDocker(applicationConfig config.Config, servers *server.Store, authHandler *auth.Handler) (dockerDependencies, error) {
+	dockerClient, err := container.NewClient(container.Config{SocketPath: applicationConfig.DockerSocket})
+	if err != nil {
+		return dockerDependencies{}, err
+	}
+	statuses := container.NewStatusCache()
+	service := container.NewService(dockerClient, dockerServerLookup(servers), dockerServerLister(servers))
+	handler := container.NewHandler(service, statuses, runtime.diagnostics, runtime.logger, authHandler.AuthenticatedFormToken)
+	return dockerDependencies{service: service, handler: handler, statuses: statuses}, nil
+}
+
+func dockerServerLookup(servers *server.Store) container.ServerLookup {
+	return func(ctx context.Context, serverID string) (container.RegisteredServer, bool, error) {
+		registered, err := servers.Get(ctx, serverID)
+		if errors.Is(err, server.ErrNotFound) {
+			return container.RegisteredServer{}, false, nil
+		}
+		if err != nil {
+			return container.RegisteredServer{}, false, err
+		}
+		return toRegisteredDockerServer(registered), true, nil
+	}
+}
+
+func dockerServerLister(servers *server.Store) container.ServerLister {
+	return func(ctx context.Context) ([]container.RegisteredServer, error) {
+		registered, err := servers.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]container.RegisteredServer, len(registered))
+		for index, item := range registered {
+			result[index] = toRegisteredDockerServer(item)
+		}
+		return result, nil
+	}
+}
+
+func toRegisteredDockerServer(registered server.Server) container.RegisteredServer {
+	return container.RegisteredServer{ID: registered.ID, Name: registered.Name, ConnectionType: registered.ConnectionType}
 }
 
 func (runtime process) serveApplication(ctx context.Context, application *app.Application) error {
@@ -163,8 +209,8 @@ func recordDatabaseOpened(logger *slog.Logger, databasePath string) {
 func recordMigrationCompleted(logger *slog.Logger) {
 	logger.Info("lifecycle", "event", "migration_completed")
 }
-func (runtime process) closeAfterFailure(database *store.Store, event string, message string, cause error) error {
-	recordedFailure := runtime.recordFailure(event, "sqlite", message, cause)
+func (runtime process) closeAfterFailure(database *store.Store, event, component, message string, cause error) error {
+	recordedFailure := runtime.recordFailure(event, component, message, cause)
 	closeError := database.Close()
 	if closeError == nil {
 		runtime.logger.Info("lifecycle", "event", "database_closed")
@@ -201,6 +247,12 @@ type process struct {
 type authenticationDependencies struct {
 	handler *auth.Handler
 	service *auth.Service
+}
+
+type dockerDependencies struct {
+	service  *container.Service
+	handler  *container.Handler
+	statuses *container.StatusCache
 }
 
 func (failure startupFailure) Error() string {

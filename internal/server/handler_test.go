@@ -15,6 +15,7 @@ import (
 
 	"github.com/irgordon/gopanel/internal/audit"
 	"github.com/irgordon/gopanel/internal/auth"
+	"github.com/irgordon/gopanel/internal/container"
 	"github.com/irgordon/gopanel/internal/diagnostic"
 	basestore "github.com/irgordon/gopanel/internal/store"
 )
@@ -51,7 +52,9 @@ func TestHandleCreatePushesCreatedResourceURLForHTMX(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	diagnostics := diagnostic.NewRecorder(logger)
 	service := newService(&fakeRegistrationStore{}, &fakeRegistrationAuditStore{}, fixedServerID("server-123"))
-	handler := NewHandler(service, diagnostics, logger, nil)
+	statuses := container.NewStatusCache()
+	statuses.MarkConnected("server-123", time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC))
+	handler := NewHandler(service, diagnostics, logger, func(*http.Request) (string, error) { return "csrf-token", nil }, statuses)
 	request := httptest.NewRequest(http.MethodPost, "/servers", nil)
 	request.Header.Set("HX-Request", "true")
 	request.PostForm = url.Values{
@@ -65,6 +68,11 @@ func TestHandleCreatePushesCreatedResourceURLForHTMX(t *testing.T) {
 
 	if response.Code != http.StatusCreated || response.Header().Get("HX-Push-Url") != "/servers/server-123" {
 		t.Fatalf("expected created URL push, got status=%d push=%q", response.Code, response.Header().Get("HX-Push-Url"))
+	}
+	for _, expected := range []string{"Docker connected", "Checked 2026-08-24T12:00:00Z", "Test Docker connection", "/servers/server-123/containers"} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("created Docker server detail missing %q", expected)
+		}
 	}
 }
 
@@ -99,7 +107,7 @@ func TestHandleCreateShowsAuditPartialCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	serverService := NewService(NewStore(database.SQLDatabase()), audit.NewStore(database.SQLDatabase()))
-	handler := NewHandler(serverService, diagnostics, logger, authHandler.AuthenticatedFormToken)
+	handler := NewHandler(serverService, diagnostics, logger, authHandler.AuthenticatedFormToken, container.NewStatusCache())
 	token, err := csrf.AuthToken(session)
 	if err != nil {
 		t.Fatal(err)

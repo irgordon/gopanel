@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/irgordon/gopanel/internal/audit"
 	"github.com/irgordon/gopanel/internal/auth"
 	"github.com/irgordon/gopanel/internal/config"
+	"github.com/irgordon/gopanel/internal/container"
 	"github.com/irgordon/gopanel/internal/diagnostic"
 	"github.com/irgordon/gopanel/internal/server"
 	"github.com/irgordon/gopanel/internal/store"
@@ -59,6 +62,28 @@ func TestRootRouteRequiresLogin(t *testing.T) {
 	assertContains(t, recorder.Body.String(), "Sign in is required")
 }
 
+func TestContainerLogsRouteRequiresAdmin(t *testing.T) {
+	application := newTestApplication(t)
+	authStore := auth.NewStore(application.store.SQLDatabase())
+	viewer, err := authStore.CreateUser(context.Background(), "viewer@example.test", "Viewer", "test-hash", "viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, _, err := authStore.CreateSession(context.Background(), viewer.ID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/servers/server-1/containers/"+strings.Repeat("a", 64)+"/logs", nil)
+	request.AddCookie(&http.Cookie{Name: "gopanel_session_dev", Value: session})
+	response := httptest.NewRecorder()
+
+	application.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "Administrator access is required") {
+		t.Fatalf("viewer log access was not denied: status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestRootRouteSetsBrowserSecurityHeaders(t *testing.T) {
 	application := newTestApplication(t)
 	recorder := serveRequest(application, http.MethodGet, "/", false)
@@ -70,6 +95,13 @@ func TestRootRouteSetsBrowserSecurityHeaders(t *testing.T) {
 	}
 	if recorder.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("expected no-referrer policy, got %q", recorder.Header().Get("Referrer-Policy"))
+	}
+}
+
+func TestHTTPServerUsesExplicitResourceBounds(t *testing.T) {
+	application := newTestApplication(t)
+	if application.server.ReadHeaderTimeout != readHeaderTimeout || application.server.ReadTimeout != readTimeout || application.server.WriteTimeout != writeTimeout || application.server.IdleTimeout != idleTimeout || application.server.MaxHeaderBytes != maximumHeaderBytes {
+		t.Fatalf("HTTP server resource bounds are incomplete: %#v", application.server)
 	}
 }
 
@@ -169,8 +201,9 @@ func TestNewRejectsInvalidConfigurationBeforeListening(t *testing.T) {
 	logger, diagnostics, _ := testObservability()
 	invalid := testConfig(databasePath, "not-an-address")
 	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
+	containerHandler, dockerService, dockerStatuses := newTestDocker(logger, diagnostics, authHandler)
 
-	_, err := New(invalid, database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
+	_, err := New(invalid, database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, containerHandler, sessionCleaner, dockerService, dockerStatuses, dockerService)
 	if err == nil || !strings.Contains(err.Error(), "validate application configuration") {
 		t.Fatalf("expected invalid configuration rejection, got %v", err)
 	}
@@ -187,7 +220,8 @@ func TestRunPropagatesListenFailureAndClosesDatabase(t *testing.T) {
 	database := openMigratedStore(t, databasePath)
 	logger, diagnostics, _ := testObservability()
 	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
-	application, err := New(testConfig(databasePath, listener.Addr().String()), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
+	containerHandler, dockerService, dockerStatuses := newTestDocker(logger, diagnostics, authHandler)
+	application, err := New(testConfig(databasePath, listener.Addr().String()), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, containerHandler, sessionCleaner, dockerService, dockerStatuses, dockerService)
 	if err != nil {
 		t.Fatalf("construct application: %v", err)
 	}
@@ -322,6 +356,91 @@ func TestSessionCleanupFailureCreatesSafeDiagnostic(t *testing.T) {
 	}
 }
 
+func TestDockerPollerNeverExceedsConfiguredConcurrency(t *testing.T) {
+	application := newTestApplication(t)
+	serverIDs := make([]string, 21)
+	for index := range serverIDs {
+		serverIDs[index] = fmt.Sprintf("docker-%02d", index)
+	}
+	checker := newTrackingDockerChecker(serverIDs)
+	application.dockerChecker = checker
+	application.dockerStatuses = container.NewStatusCache()
+	application.dockerConcurrency = 6
+	done := make(chan struct{})
+	go func() {
+		application.pollDockerStatuses(context.Background())
+		close(done)
+	}()
+
+	for range application.dockerConcurrency {
+		<-checker.started
+	}
+	if current := checker.current.Load(); current != int64(application.dockerConcurrency) {
+		t.Fatalf("expected %d active checks, got %d", application.dockerConcurrency, current)
+	}
+	checker.release <- struct{}{}
+	<-checker.started
+	for range len(serverIDs) - 1 {
+		checker.release <- struct{}{}
+	}
+	<-done
+
+	if maximum := checker.maximum.Load(); maximum > int64(application.dockerConcurrency) {
+		t.Fatalf("poller exceeded concurrency bound: max=%d bound=%d", maximum, application.dockerConcurrency)
+	}
+}
+
+func TestDockerPollerStopsWithLifecycleContext(t *testing.T) {
+	application, _, _ := newLifecycleEnvironment(t)
+	checker := &cancelingDockerChecker{started: make(chan struct{})}
+	application.dockerChecker = checker
+	application.dockerStatuses = container.NewStatusCache()
+	application.dockerInterval = time.Hour
+	listener := listenOnLoopback(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	result := runOnListener(application, ctx, listener)
+	waitForSignal(t, checker.started, "Docker status check")
+	cancel()
+
+	if err := waitForRunResult(t, result); err != nil {
+		t.Fatalf("shutdown under Docker polling failed: %v", err)
+	}
+}
+
+func TestReadinessRemainsReadyWhenDockerIsUnavailable(t *testing.T) {
+	application := newTestApplication(t)
+	application.dockerChecker = failingDockerChecker{}
+	application.dockerStatuses = container.NewStatusCache()
+	application.pollDockerStatuses(context.Background())
+	application.pollDockerStatuses(context.Background())
+
+	recorder := serveRequest(application, http.MethodGet, "/readyz", false)
+	assertStatus(t, recorder, http.StatusOK)
+	if recorder.Body.String() != "ready\n" {
+		t.Fatalf("Docker failure changed readiness: %q", recorder.Body.String())
+	}
+}
+
+func TestBackgroundDockerFailureCorrelatesStatusDiagnosticAndLog(t *testing.T) {
+	application, diagnostics, _, logs := newTestEnvironment(t)
+	application.dockerChecker = failingDockerChecker{}
+	application.dockerStatuses = container.NewStatusCache()
+	application.pollDockerStatuses(context.Background())
+	application.pollDockerStatuses(context.Background())
+
+	status := application.dockerStatuses.Get("docker-1")
+	if status.State != container.StatusUnavailable || status.ErrorReference == "" {
+		t.Fatalf("background failure did not update status: %#v", status)
+	}
+	records := diagnostics.Snapshot()
+	if len(records) != 1 || records[0].ID != status.ErrorReference || !strings.Contains(logs.String(), status.ErrorReference) {
+		t.Fatalf("background correlation mismatch: status=%#v records=%#v logs=%q", status, records, logs.String())
+	}
+	if strings.Contains(records[0].TechnicalDetail, "private Docker SDK detail") || strings.Contains(logs.String(), "private Docker SDK detail") {
+		t.Fatal("background Docker failure exposed raw SDK detail")
+	}
+}
+
 func newTestApplication(t *testing.T) *Application {
 	t.Helper()
 	application, _, _, _ := newTestEnvironment(t)
@@ -334,7 +453,8 @@ func newTestEnvironment(t *testing.T) (*Application, *diagnostic.Recorder, *stor
 	database := openMigratedStore(t, databasePath)
 	logger, diagnostics, logs := testObservability()
 	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
-	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
+	containerHandler, dockerService, dockerStatuses := newTestDocker(logger, diagnostics, authHandler)
+	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, containerHandler, sessionCleaner, dockerService, dockerStatuses, dockerService)
 	if err != nil {
 		t.Fatalf("construct application: %v", err)
 	}
@@ -362,8 +482,20 @@ func newTestHandlers(t *testing.T, database *store.Store, logger *slog.Logger, d
 	serverStore := server.NewStore(database.SQLDatabase())
 	auditStore := audit.NewStore(database.SQLDatabase())
 	serverService := server.NewService(serverStore, auditStore)
-	serverHandler := server.NewHandler(serverService, diagnostics, logger, handler.AuthenticatedFormToken)
+	serverHandler := server.NewHandler(serverService, diagnostics, logger, handler.AuthenticatedFormToken, container.NewStatusCache())
 	return handler, diagnosticHandler, serverHandler, service
+}
+
+func newTestDocker(logger *slog.Logger, diagnostics *diagnostic.Recorder, authHandler *auth.Handler) (*container.Handler, *container.Service, *container.StatusCache) {
+	reader := &testDockerReader{}
+	lookup := func(context.Context, string) (container.RegisteredServer, bool, error) {
+		return container.RegisteredServer{}, false, nil
+	}
+	lister := func(context.Context) ([]container.RegisteredServer, error) { return nil, nil }
+	service := container.NewService(reader, lookup, lister)
+	statuses := container.NewStatusCache()
+	handler := container.NewHandler(service, statuses, diagnostics, logger, authHandler.AuthenticatedFormToken)
+	return handler, service, statuses
 }
 
 func assertRenderFailureCorrelation(
@@ -399,7 +531,8 @@ func newLifecycleEnvironment(t *testing.T) (*Application, *bytes.Buffer, *store.
 	database := openMigratedStore(t, databasePath)
 	logger, diagnostics, logs := testObservability()
 	authHandler, diagnosticHandler, serverHandler, sessionCleaner := newTestHandlers(t, database, logger, diagnostics)
-	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, sessionCleaner)
+	containerHandler, dockerService, dockerStatuses := newTestDocker(logger, diagnostics, authHandler)
+	application, err := New(testConfig(databasePath, "127.0.0.1:8080"), database, logger, diagnostics, authHandler, diagnosticHandler, serverHandler, containerHandler, sessionCleaner, dockerService, dockerStatuses, dockerService)
 	if err != nil {
 		t.Fatalf("construct lifecycle application: %v", err)
 	}
@@ -430,8 +563,72 @@ func testConfig(databasePath string, address string) config.Config {
 		ListenAddress: address,
 		DatabasePath:  databasePath,
 		PublicURL:     "http://127.0.0.1:8080",
+		DockerSocket:  "/var/run/docker.sock",
 		Development:   true,
 	}
+}
+
+type testDockerReader struct{}
+
+func (*testDockerReader) Ping(context.Context) error { return nil }
+func (*testDockerReader) ListContainers(context.Context) ([]container.Container, error) {
+	return nil, nil
+}
+func (*testDockerReader) ViewLogs(context.Context, string, int) ([]byte, error) { return nil, nil }
+func (*testDockerReader) Close() error                                          { return nil }
+
+type trackingDockerChecker struct {
+	serverIDs []string
+	started   chan struct{}
+	release   chan struct{}
+	current   atomic.Int64
+	maximum   atomic.Int64
+}
+
+func newTrackingDockerChecker(serverIDs []string) *trackingDockerChecker {
+	return &trackingDockerChecker{serverIDs: serverIDs, started: make(chan struct{}, len(serverIDs)), release: make(chan struct{})}
+}
+
+func (checker *trackingDockerChecker) ListDockerServerIDs(context.Context) ([]string, error) {
+	return checker.serverIDs, nil
+}
+
+func (checker *trackingDockerChecker) CheckStatus(context.Context, string) error {
+	current := checker.current.Add(1)
+	for {
+		maximum := checker.maximum.Load()
+		if current <= maximum || checker.maximum.CompareAndSwap(maximum, current) {
+			break
+		}
+	}
+	checker.started <- struct{}{}
+	<-checker.release
+	checker.current.Add(-1)
+	return nil
+}
+
+type cancelingDockerChecker struct {
+	started chan struct{}
+}
+
+func (*cancelingDockerChecker) ListDockerServerIDs(context.Context) ([]string, error) {
+	return []string{"docker-1"}, nil
+}
+
+func (checker *cancelingDockerChecker) CheckStatus(ctx context.Context, _ string) error {
+	close(checker.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type failingDockerChecker struct{}
+
+func (failingDockerChecker) ListDockerServerIDs(context.Context) ([]string, error) {
+	return []string{"docker-1"}, nil
+}
+
+func (failingDockerChecker) CheckStatus(context.Context, string) error {
+	return errors.New("private Docker SDK detail")
 }
 
 func testObservability() (*slog.Logger, *diagnostic.Recorder, *bytes.Buffer) {

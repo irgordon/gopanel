@@ -38,6 +38,7 @@ env:
   NODE_VERSION: "26"
   TEMPL_VERSION: "v0.3.1020"
   TAILWIND_VERSION: "4.3.3"
+  GOVULNCHECK_VERSION: "v1.7.0"
 
 jobs:
   build:
@@ -64,6 +65,9 @@ jobs:
         run: |
           set -euo pipefail
           go install "github.com/a-h/templ/cmd/templ@${TEMPL_VERSION}"
+
+      - name: Install Go Vulnerability Scanner
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -140,6 +144,9 @@ jobs:
 
       - name: Go Build
         run: go build ./...
+
+      - name: Go Vulnerability Scan
+        run: govulncheck ./...
 
       - name: Verify HTMX Checksum
         working-directory: web/static

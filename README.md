@@ -6,7 +6,9 @@ Managed systems remain authoritative for their own state. GoPanel owns authentic
 
 ## Current Status
 
-GoPanel is in a pre-Phase-4 state. Phases 0, 1, 2, 2A, and 3 provide the application scaffold, lifecycle and SQLite foundation, local authentication, the administrator-only Error Log, and audited server registration. Docker connectivity and container views begin in Phase 4 and are not implemented yet.
+GoPanel now contains the local Phase 4 Docker read-only slice. Administrators can test the application-configured local Docker connection, view process-local status and freshness, list containers, and retrieve the bounded last 100 log lines. Docker remains authoritative; container and health observations are not stored in SQLite. Docker mutations remain deferred to Phase 5.
+
+Phase 4 is locally validated with the narrowly scoped [Phase 4 browser-evidence deferral](./docs/ADR/0003-phase4-javascript-disabled-browser-evidence-deferral.md) applied, and is awaiting commit authorization and exact-commit CI. Literal JavaScript-disabled browser verification remains `NOT RUN`; the deferral does not satisfy or remove that requirement from later release verification.
 
 The pre-Phase-4 repair is closed by the narrowly scoped [owner sequencing override](./docs/ADR/0002-pre-phase4-javascript-disabled-browser-override.md), and Phase 4 is authorized to begin. Literal JavaScript-disabled browser verification remains `NOT RUN`; the override permits sequencing but does not satisfy or remove that requirement from later release verification.
 
@@ -22,7 +24,7 @@ go run ./cmd/gopanel --dev
 
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080). See the [development guide](./docs/maintainers/development.md) for pinned prerequisites and validation commands.
 
-The administrator command prompts locally for email, name, and a hidden password. Development mode creates `gopanel.db` in the current directory. Sign in at `/login`; registered servers are available at `/servers`; administrators can inspect current-process diagnostics at `/errors`. Process liveness is available at `/healthz`, and SQLite-backed readiness is available at `/readyz`.
+The administrator command prompts locally for email, name, and a hidden password. Development mode creates `gopanel.db` in the current directory and uses `/var/run/docker.sock`. Sign in at `/login`; registered servers are available at `/servers`; Docker container views are linked from Docker server details; administrators can inspect current-process diagnostics at `/errors`. Process liveness is available at `/healthz`, and SQLite-backed readiness remains independent of Docker at `/readyz`.
 
 The planned v1 baseline is:
 
@@ -56,6 +58,6 @@ Coding agents must also follow [AGENTS.md](./AGENTS.md).
 
 ## Documentation
 
-User guidance includes [getting started](./docs/user/getting-started.md) and [server registration](./docs/user/servers.md).
+User guidance includes [getting started](./docs/user/getting-started.md), [server registration](./docs/user/servers.md), and [Docker containers](./docs/user/containers.md).
 
-Maintainer guidance includes [development](./docs/maintainers/development.md), [operations](./docs/maintainers/operations.md), [authentication](./docs/maintainers/authentication.md), [error handling](./docs/maintainers/error-handling.md), and [project layout](./docs/maintainers/project-layout.md).
+Maintainer guidance includes [development](./docs/maintainers/development.md), [operations](./docs/maintainers/operations.md), [authentication](./docs/maintainers/authentication.md), [integrations](./docs/maintainers/integrations.md), [UI patterns](./docs/maintainers/ui-patterns.md), [error handling](./docs/maintainers/error-handling.md), and [project layout](./docs/maintainers/project-layout.md).

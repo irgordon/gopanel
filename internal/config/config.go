@@ -17,12 +17,14 @@ const (
 	developmentAddress      = "127.0.0.1:8080"
 	developmentDatabasePath = "./gopanel.db"
 	developmentPublicURL    = "http://127.0.0.1:8080"
+	developmentDockerSocket = "/var/run/docker.sock"
 )
 
 type Config struct {
 	ListenAddress string
 	DatabasePath  string
 	PublicURL     string
+	DockerSocket  string
 	Development   bool
 }
 
@@ -58,6 +60,7 @@ type options struct {
 	listenAddress string
 	databasePath  string
 	publicURL     string
+	dockerSocket  string
 }
 
 func parseOptions(arguments []string) (options, error) {
@@ -68,6 +71,7 @@ func parseOptions(arguments []string) (options, error) {
 	flags.StringVar(&parsed.listenAddress, "listen-address", "", "HTTP listen address")
 	flags.StringVar(&parsed.databasePath, "database-path", "", "SQLite database path")
 	flags.StringVar(&parsed.publicURL, "public-url", "", "public GoPanel URL")
+	flags.StringVar(&parsed.dockerSocket, "docker-socket", "", "allowed local Docker socket")
 	if err := flags.Parse(arguments); err != nil {
 		return options{}, fmt.Errorf("parse process arguments: %w", err)
 	}
@@ -82,6 +86,7 @@ func buildConfig(parsed options) Config {
 		ListenAddress: parsed.listenAddress,
 		DatabasePath:  parsed.databasePath,
 		PublicURL:     parsed.publicURL,
+		DockerSocket:  parsed.dockerSocket,
 		Development:   parsed.development,
 	}
 	if cfg.Development {
@@ -99,6 +104,9 @@ func applyDevelopmentDefaults(cfg *Config) {
 	}
 	if cfg.PublicURL == "" {
 		cfg.PublicURL = developmentPublicURL
+	}
+	if cfg.DockerSocket == "" {
+		cfg.DockerSocket = developmentDockerSocket
 	}
 }
 

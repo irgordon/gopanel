@@ -11,15 +11,17 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/irgordon/gopanel/internal/auth"
+	"github.com/irgordon/gopanel/internal/container"
 	"github.com/irgordon/gopanel/internal/diagnostic"
 	"github.com/irgordon/gopanel/internal/view/pages/serverpages"
 )
 
 type Handler struct {
-	service     *Service
-	diagnostics *diagnostic.Recorder
-	logger      *slog.Logger
-	issueToken  FormTokenIssuer
+	service      *Service
+	diagnostics  *diagnostic.Recorder
+	logger       *slog.Logger
+	issueToken   FormTokenIssuer
+	dockerStatus *container.StatusCache
 }
 
 type FormTokenIssuer func(*http.Request) (string, error)
@@ -32,8 +34,8 @@ type createResponse struct {
 	err     error
 }
 
-func NewHandler(service *Service, diagnostics *diagnostic.Recorder, logger *slog.Logger, issueToken FormTokenIssuer) *Handler {
-	return &Handler{service: service, diagnostics: diagnostics, logger: logger, issueToken: issueToken}
+func NewHandler(service *Service, diagnostics *diagnostic.Recorder, logger *slog.Logger, issueToken FormTokenIssuer, dockerStatus *container.StatusCache) *Handler {
+	return &Handler{service: service, diagnostics: diagnostics, logger: logger, issueToken: issueToken, dockerStatus: dockerStatus}
 }
 
 func (h *Handler) Routes(router chi.Router, protectPost func(http.Handler) http.Handler) {
@@ -67,11 +69,30 @@ func (h *Handler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 		h.renderServerError(w, r, "get_server", err)
 		return
 	}
-	if isHTMXRequest(r) {
-		h.render(w, r, http.StatusOK, serverpages.ServerDetailFragment(toDisplayServer(srv)))
+	detail, err := h.prepareDetail(r, srv)
+	if err != nil {
+		h.renderServerError(w, r, "prepare_server_detail", err)
 		return
 	}
-	h.render(w, r, http.StatusOK, serverpages.ServerDetailPage(toDisplayServer(srv)))
+	if isHTMXRequest(r) {
+		h.render(w, r, http.StatusOK, serverpages.ServerDetailFragment(detail))
+		return
+	}
+	h.render(w, r, http.StatusOK, serverpages.ServerDetailPage(detail))
+}
+
+func (h *Handler) prepareDetail(r *http.Request, srv Server) (serverpages.DetailModel, error) {
+	detail := serverpages.DetailModel{Server: toDisplayServer(srv)}
+	if srv.ConnectionType != "docker" {
+		return detail, nil
+	}
+	token, err := h.issueToken(r)
+	if err != nil {
+		return serverpages.DetailModel{}, err
+	}
+	docker := container.PrepareSummaryModel(srv.ID, h.dockerStatus.Get(srv.ID), token, "")
+	detail.Docker = &docker
+	return detail, nil
 }
 
 func (h *Handler) HandleNewForm(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +135,12 @@ func (h *Handler) respondToCreate(w http.ResponseWriter, r *http.Request, respon
 	h.logger.Info("audit", "event", "create_server_success", "audit_id", response.auditID, "server_id", response.server.ID, "user_id", response.userID)
 	if isHTMXRequest(r) {
 		w.Header().Set("HX-Push-Url", "/servers/"+response.server.ID)
-		h.render(w, r, http.StatusCreated, serverpages.ServerDetailFragment(toDisplayServer(response.server)))
+		detail, err := h.prepareDetail(r, response.server)
+		if err != nil {
+			h.renderServerError(w, r, "prepare_server_detail", err)
+			return
+		}
+		h.render(w, r, http.StatusCreated, serverpages.ServerDetailFragment(detail))
 		return
 	}
 	http.Redirect(w, r, "/servers/"+response.server.ID, http.StatusSeeOther)

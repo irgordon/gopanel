@@ -1,6 +1,6 @@
-# Operate GoPanel Before Phase 4
+# Operate GoPanel Phase 4
 
-This page documents the lifecycle for the current Phase 0–3 application. Local authentication, the process-local Error Log, audit history, and server registration are active. Managed-system integrations remain deferred to Phase 4 and later.
+This page documents the lifecycle for the current Phase 0–4 application. Local authentication, the process-local Error Log, audit history, server registration, and local Docker read-only visibility are active.
 
 ## Startup Order
 
@@ -47,7 +47,7 @@ GET /readyz  → 200 ready, or 503 not ready
 
 `/healthz` reports process liveness. `/readyz` checks that SQLite remains available and fails while shutdown is in progress. Responses are stable plain text and do not expose raw database or filesystem errors.
 
-Readiness deliberately excludes Docker, Caddy, Vault, Kubernetes, and future managed systems. Their reachability will be separate observed state and must never redefine process readiness.
+Readiness deliberately excludes Docker, Caddy, Vault, Kubernetes, and future managed systems. Docker unavailability updates process-local server status and may create a correlated diagnostic, but `/readyz` remains ready while SQLite and GoPanel are healthy.
 
 ## Structured Lifecycle Events
 
@@ -90,7 +90,13 @@ mark shutting down
 → exit
 ```
 
-The process-level signal context does not become the request context, so healthy in-flight requests are not canceled immediately. The same lifecycle owns periodic expired-session cleanup and stops that loop before SQLite closes. Phase 4 will add the first managed-system status poller.
+The process-level signal context does not become the request context, so healthy in-flight requests are not canceled immediately. The same lifecycle owns periodic expired-session cleanup and the 30-second Docker status poller. Shutdown stops Docker scheduling, waits for poll workers, closes the Docker client, and then closes SQLite.
+
+## Docker Runtime State
+
+Docker status is synchronized process memory only. Restart begins with `Docker not checked`; the lifecycle poller performs a new Docker API ping and records a fresh checked time. Continued unavailability reuses the existing error reference instead of adding a new Error Log entry every 30 seconds.
+
+GoPanel accepts only `/var/run/docker.sock` or `/run/docker.sock` from application configuration. Registered server address is not a connection endpoint. Check socket existence, ownership, and Docker daemon permissions when the status remains unavailable. Treat Docker daemon access as privileged host-management authority.
 
 ## Startup Troubleshooting
 

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Added Phase 4 local Docker read-only integration using the official typed Moby client (`github.com/moby/moby/client` v0.5.1 and API types v1.55.0): Docker ping, all-container listing, and bounded last-100-line log retrieval only.
+- Added Docker-specific socket validation restricted to `/var/run/docker.sock` and `/run/docker.sock`; registered server addresses never become Docker endpoints.
+- Added process-local Docker status and freshness, an application-owned 30-second poller with six fixed workers, restart-cleared observations, and readiness independence from Docker.
+- Added server-detail Docker status and connection testing, URL-addressable container and log pages, full-page/HTMX responses, deliberate desktop table and mobile cards, and Loading/Empty/Loaded/Error presentation states.
+- Added Docker user and maintainer documentation covering ownership, configuration, status freshness, bounded administrator-only logs, safe diagnostics, and lifecycle behavior.
+- Recorded the Phase 4 owner browser-evidence deferral without reclassifying the literal JavaScript-disabled browser result, weakening GP-023/GP-031, or removing later release verification.
+
 ### Fixed
 
 - Enforced bounded, origin-checked, body-only CSRF validation before browser mutations. Query parameters can no longer supply form tokens.
@@ -22,6 +31,9 @@
 
 - Production session cookies now use `__Host-gopanel_session`; development uses a separate loopback-only cookie name. Legacy session cookies are cleared during login, logout, and password changes.
 - Added behavioral regression coverage for CSRF source, hostile origins, limiter consumption, raw-error disclosure, logout persistence failure, diagnostic redaction, audit partial completion, and session-cleanup ownership.
+- Added reject-before-client Docker configuration tests, server-side connection-test and log authorization tests, bounded Docker context/log tests, poller concurrency and shutdown tests, restart-cleared status tests, and one-reference Docker diagnostic correlation tests.
+- Added explicit HTTP read/write/header resource bounds for the shared server used by bounded infrastructure routes.
+- Added a pinned `govulncheck` v1.7.0 source scan to the protected workflow for the expanded infrastructure-client dependency surface.
 
 ## v0.1.0 - 2026-08-24
 

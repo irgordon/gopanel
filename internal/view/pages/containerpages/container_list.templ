@@ -1,0 +1,118 @@
+package containerpages
+
+import "github.com/irgordon/gopanel/internal/view"
+
+templ DockerSummary(model DockerSummaryModel) {
+	<section id="docker-summary" class="rounded-3xl border border-white/10 bg-white/[0.045] p-5 sm:p-6" data-request-region="true" aria-labelledby="docker-summary-title">
+		<div class="flex flex-wrap items-start justify-between gap-4">
+			<div>
+				<p class="text-sm font-semibold tracking-wide text-cyan-300 uppercase">Docker</p>
+				<h2 id="docker-summary-title" class="mt-2 text-xl font-bold text-white">{ model.StatusLabel }</h2>
+				<p class="mt-1 text-sm text-slate-400">{ model.Freshness }</p>
+			</div>
+			<span class={ "inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase " + statusClasses(model.State) }>{ model.State }</span>
+		</div>
+		if model.SuccessMessage != "" {
+			<div role="status" class="mt-4 rounded-2xl border border-emerald-300/25 bg-emerald-300/10 p-4 text-sm text-emerald-100">{ model.SuccessMessage }</div>
+		}
+		if model.ErrorReference != "" {
+			<div role="alert" class="mt-4 rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-rose-50">
+				<p class="font-semibold">Docker did not respond.</p>
+				<p class="mt-1 text-sm text-rose-100/80">Try the connection test again. If the problem continues, use the error reference.</p>
+				<p class="mt-2 font-mono text-xs">Error reference: { model.ErrorReference } <a href={ templ.URL("/errors/" + model.ErrorReference) } class="underline">See Error Log</a></p>
+			</div>
+		}
+		<div class="mt-5 flex flex-wrap items-center gap-3">
+			<a href={ templ.URL("/servers/" + model.ServerID + "/containers") } hx-get={ "/servers/" + model.ServerID + "/containers" } hx-target="closest main" hx-push-url="true" hx-indicator="#docker-navigation-indicator" class="inline-flex min-h-11 items-center rounded-xl border border-cyan-300/30 px-4 py-2 text-sm font-semibold text-cyan-200">View containers</a>
+			<form method="post" action={ templ.URL("/servers/" + model.ServerID + "/test-docker") } hx-post={ "/servers/" + model.ServerID + "/test-docker" } hx-target="#docker-summary" hx-swap="outerHTML" hx-indicator="#docker-test-indicator">
+				<input type="hidden" name="csrf_token" value={ model.CSRFToken }/>
+				<button type="submit" class="inline-flex min-h-11 items-center rounded-xl bg-cyan-300 px-4 py-2 text-sm font-bold text-slate-950">Test Docker connection</button>
+			</form>
+			<span id="docker-test-indicator" class="htmx-indicator text-sm text-slate-400" role="status">Testing Docker...</span>
+			<span id="docker-navigation-indicator" class="htmx-indicator text-sm text-slate-400" role="status">Checking containers...</span>
+		</div>
+	</section>
+}
+
+templ ContainerListPage(model ContainerListModel) {
+	@view.Layout(model.ServerName + " containers — GoPanel") {
+		@ContainerListMain(model)
+	}
+}
+
+templ ContainerListMain(model ContainerListModel) {
+	<main class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+		<a href={ templ.URL("/servers/" + model.ServerID) } hx-get={ "/servers/" + model.ServerID } hx-target="closest main" hx-push-url="true" class="text-sm font-semibold text-cyan-300">← Back to server</a>
+		<section class="mt-5" aria-labelledby="containers-title" data-request-region="true">
+			<h1 id="containers-title" class="text-2xl font-bold text-white">{ model.ServerName } containers</h1>
+			<p class="mt-2 text-sm text-slate-400">Docker is authoritative. This list is read when the page loads and is not stored in SQLite.</p>
+			@ContainerListFragment(model)
+		</section>
+	</main>
+}
+
+templ ContainerListFragment(model ContainerListModel) {
+	<div data-request-region="true" class="mt-6">
+		if len(model.Containers) == 0 {
+			<div class="rounded-3xl border border-white/10 bg-white/[0.045] p-6 text-center">
+				<p class="font-semibold text-white">No containers are available on this Docker server.</p>
+				<p class="mt-2 text-sm text-slate-400">Docker responded successfully, but returned an empty container list.</p>
+				<a href={ templ.URL("/servers/" + model.ServerID + "/containers") } class="mt-4 inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white">Try again</a>
+			</div>
+		} else {
+			<div class="hidden overflow-hidden rounded-3xl border border-white/10 md:block">
+				<table class="w-full text-left text-sm">
+					<thead class="bg-white/[0.06] text-xs tracking-wide text-slate-400 uppercase"><tr><th class="px-5 py-4">Name</th><th class="px-5 py-4">Image</th><th class="px-5 py-4">State</th><th class="px-5 py-4">Docker status</th><th class="px-5 py-4">Action</th></tr></thead>
+					<tbody class="divide-y divide-white/10">
+						for _, item := range model.Containers {
+							@ContainerTableRow(model.ServerID, item, model.CanViewLogs)
+						}
+					</tbody>
+				</table>
+			</div>
+			<ul class="space-y-3 md:hidden">
+				for _, item := range model.Containers {
+					@ContainerMobileCard(model.ServerID, item, model.CanViewLogs)
+				}
+			</ul>
+		}
+	</div>
+}
+
+templ ContainerTableRow(serverID string, item DisplayContainer, canViewLogs bool) {
+	<tr>
+		<td class="px-5 py-4"><p class="font-semibold text-white">{ item.Name }</p><p class="mt-1 font-mono text-xs text-slate-500">{ item.ShortID }</p></td>
+		<td class="px-5 py-4 text-slate-300">{ item.Image }</td>
+		<td class="px-5 py-4"><span class="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-200">{ item.State }</span></td>
+		<td class="px-5 py-4 text-slate-400">{ item.Status }</td>
+		<td class="px-5 py-4">
+			if canViewLogs {
+				<a href={ templ.URL("/servers/" + serverID + "/containers/" + item.ID + "/logs") } class="inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 py-2 font-semibold text-white">View logs</a>
+			}
+		</td>
+	</tr>
+}
+
+templ ContainerMobileCard(serverID string, item DisplayContainer, canViewLogs bool) {
+	<li class="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+		<div class="flex items-start justify-between gap-3"><div class="min-w-0"><p class="truncate font-semibold text-white">{ item.Name }</p><p class="mt-1 truncate text-sm text-slate-400">{ item.Image }</p></div><span class="shrink-0 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-200">{ item.State }</span></div>
+		<p class="mt-3 text-sm text-slate-400">{ item.Status }</p>
+		if canViewLogs {
+			<a href={ templ.URL("/servers/" + serverID + "/containers/" + item.ID + "/logs") } class="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white">View bounded logs</a>
+		}
+	</li>
+}
+
+templ ContainerLoadingFragment() {
+	<div role="status" aria-live="polite" data-request-region="true" class="rounded-3xl border border-white/10 bg-white/[0.045] p-6 text-slate-300">Checking containers...</div>
+}
+
+func statusClasses(state string) string {
+	if state == "connected" {
+		return "border-emerald-300/30 bg-emerald-300/10 text-emerald-200"
+	}
+	if state == "unavailable" {
+		return "border-rose-300/30 bg-rose-300/10 text-rose-200"
+	}
+	return "border-amber-300/30 bg-amber-300/10 text-amber-200"
+}

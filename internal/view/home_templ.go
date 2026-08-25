@@ -64,7 +64,7 @@ func HomePage(model HomeModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = Badge("Pre-Phase 4").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = Badge("Phase 4").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -81,7 +81,7 @@ func HomePage(model HomeModel) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\" class=\"inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white\">Sign out</button></form></div></header><section class=\"max-w-3xl py-8 sm:py-14\" aria-labelledby=\"page-title\"><p class=\"text-sm font-semibold tracking-[0.2em] text-cyan-300 uppercase\">Control plane</p><h1 id=\"page-title\" class=\"mt-4 text-4xl font-black tracking-tight text-balance text-white sm:text-6xl\">Register and manage infrastructure safely.</h1><p class=\"mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8\">Authentication, process-local diagnostics, and audited server registration are active. Docker operations begin in Phase 4.</p></section><section class=\"grid gap-4 md:grid-cols-3\" aria-label=\"Available GoPanel capabilities\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"> <button type=\"submit\" class=\"inline-flex min-h-11 items-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white\">Sign out</button></form></div></header><section class=\"max-w-3xl py-8 sm:py-14\" aria-labelledby=\"page-title\"><p class=\"text-sm font-semibold tracking-[0.2em] text-cyan-300 uppercase\">Control plane</p><h1 id=\"page-title\" class=\"mt-4 text-4xl font-black tracking-tight text-balance text-white sm:text-6xl\">Register and manage infrastructure safely.</h1><p class=\"mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8\">Authentication, diagnostics, audited server registration, and bounded read-only Docker visibility are active.</p></section><section class=\"grid gap-4 md:grid-cols-3\" aria-label=\"Available GoPanel capabilities\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -153,7 +153,7 @@ func HomePage(model HomeModel) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section><footer class=\"border-t border-white/10 py-6 text-sm text-slate-500\">GoPanel pre-Phase 4 · Managed systems remain authoritative for operational state.</footer></div></main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</section><footer class=\"border-t border-white/10 py-6 text-sm text-slate-500\">GoPanel Phase 4 · Docker remains authoritative for container state.</footer></div></main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

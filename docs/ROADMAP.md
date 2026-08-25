@@ -215,6 +215,10 @@ Deferred evidence: literal JavaScript-disabled browser verification must be exec
 
 ## Phase 4 — Docker Read-Only (M)
 
+**Status:** `LOCAL PASS — OWNER BROWSER-EVIDENCE DEFERRAL APPLIED — AWAITING COMMIT AND EXACT-COMMIT CI`
+
+Local automated, browser, supporting real-HTML HTTP, and critical negative-control evidence applies to the final baseline-plus-complete-diff source recorded by the Phase 4 validation report. Independent exact-commit CI remains `NOT RUN` until commit authorization is provided. Literal JavaScript-disabled browser verification remains `NOT RUN` under the Phase 4 owner deferral recorded in [ADR 0003](./ADR/0003-phase4-javascript-disabled-browser-evidence-deferral.md); it is not reclassified or removed from later release verification.
+
 **Objectives**
 - First real infrastructure integration, read-only, proving the client → service → handler → view path end to end, and establishing conventions the other read-only integrations (Vault, Kubernetes) will reuse. Also the phase that gives Docker's `credential_reference` semantic meaning, per Phase 3.
 

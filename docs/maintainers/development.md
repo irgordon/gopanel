@@ -1,8 +1,8 @@
 # Develop GoPanel
 
-Use this page to run and validate the current pre-Phase-4 application.
+Use this page to run and validate the current Phase 4 application.
 
-Phases 0–3 provide validated startup, file-backed SQLite, local authentication, process-local browser diagnostics, audited server registration, health and readiness probes, structured lifecycle logs, expired-session cleanup, and graceful shutdown. Managed-system integrations have not shipped; Phase 4 begins Docker read-only support.
+Phases 0–4 provide validated startup, file-backed SQLite, local authentication, process-local browser diagnostics, audited server registration, bounded Docker read-only visibility, health and readiness probes, structured lifecycle logs, recurring-work ownership, and graceful shutdown. Docker mutations and other managed-system integrations have not shipped.
 
 ## Prerequisites
 
@@ -12,11 +12,13 @@ Use the versions pinned by [the build workflow](../../.github/workflows/build.ya
 - Node.js `26`
 - Templ CLI `v0.3.1020`
 - Tailwind CSS and CLI `4.3.3`
+- Go vulnerability scanner `v1.7.0`
 
 Install the pinned development tools:
 
 ```bash
 go install github.com/a-h/templ/cmd/templ@v0.3.1020
+go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 npm ci
 ```
 
@@ -31,6 +33,14 @@ templ generate
 npm run build:css
 go run ./cmd/gopanel --dev
 ```
+
+Development defaults Docker to `/var/run/docker.sock`. Override only with the other currently allowed local socket:
+
+```bash
+go run ./cmd/gopanel --dev --docker-socket /run/docker.sock
+```
+
+Production invocation requires `--docker-socket`. Docker-owned validation rejects arbitrary paths, URLs, TCP endpoints, and environment-derived hosts before SDK construction.
 
 Development defaults are:
 
@@ -84,6 +94,7 @@ go test -count=1 -json ./... | tee /tmp/gopanel-go-test.json
 go test -race -count=1 ./...
 go vet ./...
 go build ./...
+govulncheck ./...
 cd web/static
 shasum -a 256 -c htmx-1.9.12.min.js.sha256
 ```
@@ -120,7 +131,7 @@ When a critical test is introduced or materially changed:
 4. Apply the exact inverse change and confirm the original file hash and complete diff digest.
 5. Rerun the unmodified test and record the successful result.
 
-Current critical controls include migration failure, configuration rejection, SQLite-backed readiness, graceful HTTP draining, authentication and CSRF boundaries, diagnostic redaction, the 200-entry diagnostic bound, error-reference correlation, server-registration audit transitions, and lifecycle-owned session cleanup. Negative-control mutations are temporary and must never be committed.
+Current critical controls include migration failure, configuration rejection, SQLite-backed readiness, graceful HTTP draining, authentication and CSRF boundaries, Docker endpoint confinement, bounded Docker calls and poller concurrency, administrator-only bounded logs, Docker diagnostic safety, restart-cleared status, the 200-entry diagnostic bound, error-reference correlation, server-registration audit transitions, and lifecycle-owned recurring work. Negative-control mutations are temporary and must never be committed.
 
 ## Evidence States
 
@@ -139,12 +150,15 @@ The JavaScript-independent real-HTML HTTP workflow is separate supporting eviden
 
 Those remaining checks and exact-commit CI passed, so the pre-Phase-4 repair is closed by owner sequencing override and Phase 4 is authorized to begin. The deferred literal browser result remains `NOT RUN` and remains mandatory later when a suitable environment is available.
 
+[ADR 0003](../ADR/0003-phase4-javascript-disabled-browser-evidence-deferral.md) separately applies the same truthful evidence treatment to Phase 4. Desktop and mobile literal browser checks and the supporting real-HTML HTTP flow passed; literal JavaScript-disabled browser verification remains `NOT RUN`. The owner accepts that unresolved item for Phase 4 closure only after the exact committed source passes every protected CI check, including `govulncheck`, with zero required skips. Phase 4 therefore remains locally passed and awaiting commit and exact-commit CI.
+
 ## Current Phase Boundary
 
 - SQLite contains migration metadata plus `users`, `sessions`, `servers`, and `audit_log`.
 - Diagnostic records are process-local, capped at 200, and exposed only through administrator-authorized browser routes.
 - Local authentication, two roles, session-bound CSRF, and audited server registration are present.
-- Docker, Caddy, Vault, and Kubernetes clients and operations are not present.
+- Docker ping, container listing, and bounded administrator-only log retrieval are present through the configured local Unix socket. No Docker mutation is present.
+- Caddy, Vault, and Kubernetes clients and operations are not present.
 - Readiness depends on GoPanel and SQLite only.
 
 See [Architecture](../ARCHITECTURE.md) and [Invariants](../INVARIANTS.md) for the boundaries later phases must preserve.

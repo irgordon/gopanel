@@ -2,6 +2,7 @@ package serverpages
 
 import (
 	"github.com/irgordon/gopanel/internal/view"
+	"github.com/irgordon/gopanel/internal/view/pages/containerpages"
 )
 
 templ ServerListPage(servers []DisplayServer) {
@@ -42,26 +43,31 @@ templ ServerListFragment(servers []DisplayServer) {
 	</div>
 }
 
-templ ServerDetailPage(srv DisplayServer) {
-	@view.Layout(srv.Name + " — GoPanel") {
+templ ServerDetailPage(model DetailModel) {
+	@view.Layout(model.Server.Name + " — GoPanel") {
 		<main class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
 			<a href="/servers" hx-get="/servers" hx-target="closest main" hx-push-url="true" class="text-sm font-semibold text-cyan-300">← Back to servers</a>
 			<div class="mt-4" data-request-region="true">
-				@ServerDetailFragment(srv)
+				@ServerDetailFragment(model)
 			</div>
 		</main>
 	}
 }
 
-templ ServerDetailFragment(srv DisplayServer) {
-	<article class="rounded-3xl border border-white/10 bg-white/[0.045] p-6" data-request-region="true">
-		<h1 class="text-xl font-bold text-white">{ srv.Name }</h1>
-		<dl class="mt-4 space-y-2 text-sm">
-			<div><dt class="text-slate-400">Address</dt><dd class="text-white">{ srv.Address }</dd></div>
-			<div><dt class="text-slate-400">Connection type</dt><dd class="text-white">{ srv.ConnectionType }</dd></div>
-			<div><dt class="text-slate-400">ID</dt><dd class="font-mono text-xs text-slate-500">{ srv.ID }</dd></div>
-		</dl>
-	</article>
+templ ServerDetailFragment(model DetailModel) {
+	<div class="space-y-4" data-request-region="true">
+		<article class="rounded-3xl border border-white/10 bg-white/[0.045] p-6">
+			<h1 class="text-xl font-bold text-white">{ model.Server.Name }</h1>
+			<dl class="mt-4 space-y-2 text-sm">
+				<div><dt class="text-slate-400">Address</dt><dd class="text-white">{ model.Server.Address }</dd></div>
+				<div><dt class="text-slate-400">Connection type</dt><dd class="text-white">{ model.Server.ConnectionType }</dd></div>
+				<div><dt class="text-slate-400">ID</dt><dd class="font-mono text-xs text-slate-500">{ model.Server.ID }</dd></div>
+			</dl>
+		</article>
+		if model.Docker != nil {
+			@containerpages.DockerSummary(*model.Docker)
+		}
+	</div>
 }
 
 templ ServerErrorFragment(errorRef string) {

@@ -24,6 +24,9 @@ func TestLoadDevelopmentConfig(t *testing.T) {
 	if applicationConfig.PublicURL != developmentPublicURL {
 		t.Fatalf("expected URL %q, got %q", developmentPublicURL, applicationConfig.PublicURL)
 	}
+	if applicationConfig.DockerSocket != developmentDockerSocket {
+		t.Fatalf("expected Docker socket %q, got %q", developmentDockerSocket, applicationConfig.DockerSocket)
+	}
 }
 
 func TestLoadProductionConfig(t *testing.T) {
@@ -32,6 +35,7 @@ func TestLoadProductionConfig(t *testing.T) {
 		"--listen-address", "0.0.0.0:8443",
 		"--database-path", databasePath,
 		"--public-url", "https://panel.example.com",
+		"--docker-socket", "/var/run/docker.sock",
 	}
 
 	applicationConfig, err := Load(arguments)
@@ -49,6 +53,7 @@ func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 		ListenAddress: "127.0.0.1:8080",
 		DatabasePath:  filepath.Join(t.TempDir(), "gopanel.db"),
 		PublicURL:     "http://127.0.0.1:8080",
+		DockerSocket:  "/var/run/docker.sock",
 		Development:   true,
 	}
 
